@@ -8,6 +8,13 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -22,6 +29,7 @@ import {
   PinOff,
   Clock,
   ArrowLeft,
+  ArrowRight,
   ArrowUpRight,
   Link2,
   Network,
@@ -35,11 +43,33 @@ import {
   ListOrdered,
   Quote,
   ExternalLink,
+  CalendarClock,
+  History,
+  Download,
+  Upload,
+  ChevronDown,
+  ChevronRight,
+  Command as CommandIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/markdown";
 import type { SectionId } from "@/lib/sections";
+import {
+  PREDEFINED_TEMPLATES,
+  buildDailyNote,
+  formatDate,
+  isDailyNoteTitle,
+  parseDate,
+  shiftDate,
+  today,
+  type NoteTemplate,
+} from "@/components/notes/daily-notes";
+import { CommandPalette } from "@/components/notes/command-palette";
+import { WikiAutocomplete } from "@/components/notes/wiki-autocomplete";
+import { FrontmatterEditor } from "@/components/notes/frontmatter-editor";
+import { NoteHistory } from "@/components/notes/note-history";
+import { GraphViewEnhanced } from "@/components/notes/graph-view-enhanced";
 
 interface NoteDTO {
   id: string;
@@ -55,11 +85,12 @@ interface NoteDTO {
 
 interface NotesKnowledgeProps {
   onSelectTicker: (symbol: string) => void;
+  onNavigate?: (id: SectionId, ticker?: string) => void;
 }
 
 type ViewMode = "list" | "graph";
 
-export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
+export function NotesKnowledge({ onSelectTicker, onNavigate }: NotesKnowledgeProps) {
   const [notes, setNotes] = useState<NoteDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -69,16 +100,32 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
   const [view, setView] = useState<ViewMode>("list");
   const [backlinks, setBacklinks] = useState<NoteDTO[]>([]);
   const [graphData, setGraphData] = useState<{
-    nodes: { id: string; title: string; tags: string[]; pinned: boolean; linkCount: number }[];
+    nodes: {
+      id: string;
+      title: string;
+      tags: string[];
+      pinned: boolean;
+      linkCount: number;
+      createdAt?: string;
+      wordCount?: number;
+    }[];
     links: { source: string; target: string }[];
     stats: { totalNodes: number; totalLinks: number; avgLinksPerNote: string; orphanCount: number };
   } | null>(null);
 
+  // New features state
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [expandedTagFolders, setExpandedTagFolders] = useState<Set<string>>(
+    new Set(["ticker", "sector"])
+  );
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftRef = useRef<NoteDTO | null>(null);
   draftRef.current = draft;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch notes list (with current filter/search)
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -98,6 +145,39 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Auto-create today's daily note on first visit each day
+  useEffect(() => {
+    const key = `aib-daily-${formatDate(today())}`;
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+    (async () => {
+      try {
+        const todayStr = formatDate(today());
+        const existing = notes.find((n) => n.title === todayStr);
+        if (existing) return;
+        const built = buildDailyNote(today());
+        const r = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: built.title,
+            content: built.content,
+            tags: ["daily"],
+            pinned: false,
+          }),
+        });
+        const data = await r.json();
+        if (data.note) {
+          toast.success(`Daily note created: ${built.title}`);
+          await refresh();
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   // Fetch graph when in graph view
   useEffect(() => {
@@ -128,9 +208,7 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
       try {
         const r = await fetch(`/api/notes/${activeId}`, { cache: "no-store" });
         const d = await r.json();
-        if (!cancelled) {
-          setBacklinks(d.backlinks ?? []);
-        }
+        if (!cancelled) setBacklinks(d.backlinks ?? []);
       } catch {
         /* ignore */
       }
@@ -141,6 +219,10 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
   }, [activeId]);
 
   function startNew() {
+    setTemplatePickerOpen(true);
+  }
+
+  function createBlank() {
     const blank: NoteDTO = {
       id: "",
       title: "Untitled note",
@@ -154,11 +236,106 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
     };
     setDraft(blank);
     setActiveId(null);
+    setTemplatePickerOpen(false);
+  }
+
+  function createFromTemplate(templateId: string) {
+    const tpl: NoteTemplate | undefined = PREDEFINED_TEMPLATES.find(
+      (t) => t.id === templateId
+    );
+    if (!tpl) {
+      createBlank();
+      return;
+    }
+    const built = tpl.build({});
+    const blank: NoteDTO = {
+      id: "",
+      title: built.title,
+      content: built.content,
+      tags: tpl.id === "daily" ? ["daily"] : [],
+      tickerRefs: [],
+      links: [],
+      pinned: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setDraft(blank);
+    setActiveId(null);
+    setTemplatePickerOpen(false);
   }
 
   function openNote(n: NoteDTO) {
     setDraft({ ...n });
     setActiveId(n.id);
+  }
+
+  function openDailyNote() {
+    const todayStr = formatDate(today());
+    const found = notes.find((n) => n.title === todayStr);
+    if (found) {
+      openNote(found);
+    } else {
+      (async () => {
+        const built = buildDailyNote(today());
+        try {
+          const r = await fetch("/api/notes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: built.title,
+              content: built.content,
+              tags: ["daily"],
+              pinned: false,
+            }),
+          });
+          const data = await r.json();
+          if (data.note) {
+            await refresh();
+            openNote(data.note);
+            toast.success(`Daily note created: ${built.title}`);
+          }
+        } catch {
+          toast.error("Failed to create daily note");
+        }
+      })();
+    }
+  }
+
+  // Navigate to adjacent daily note
+  function navigateDay(direction: -1 | 1) {
+    if (!draft || !isDailyNoteTitle(draft.title)) return;
+    const currentDate = parseDate(draft.title);
+    if (!currentDate) return;
+    const targetDate = shiftDate(currentDate, direction);
+    const targetStr = formatDate(targetDate);
+    const found = notes.find((n) => n.title === targetStr);
+    if (found) {
+      openNote(found);
+    } else {
+      // Create the adjacent daily note
+      (async () => {
+        const built = buildDailyNote(targetDate);
+        try {
+          const r = await fetch("/api/notes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: built.title,
+              content: built.content,
+              tags: ["daily"],
+              pinned: false,
+            }),
+          });
+          const data = await r.json();
+          if (data.note) {
+            await refresh();
+            openNote(data.note);
+          }
+        } catch {
+          toast.error("Failed to create daily note");
+        }
+      })();
+    }
   }
 
   // Auto-save 1s after typing stops
@@ -176,11 +353,15 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
   async function saveDraft(d: NoteDTO) {
     try {
       if (!d.id) {
-        // Create
         const r = await fetch("/api/notes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: d.title, content: d.content, pinned: d.pinned }),
+          body: JSON.stringify({
+            title: d.title,
+            content: d.content,
+            pinned: d.pinned,
+            tags: d.tags,
+          }),
         });
         const data = await r.json();
         if (data.note) {
@@ -192,7 +373,11 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
         const r = await fetch(`/api/notes/${d.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: d.title, content: d.content, pinned: d.pinned }),
+          body: JSON.stringify({
+            title: d.title,
+            content: d.content,
+            pinned: d.pinned,
+          }),
         });
         const data = await r.json();
         if (data.note) {
@@ -237,10 +422,33 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
     }
   }
 
-  const allTags = useMemo(() => {
+  // ── All tags + hierarchical tag grouping (single useMemo to avoid TDZ) ──
+  const { allTags, tagTree } = useMemo(() => {
     const s = new Set<string>();
     notes.forEach((n) => n.tags.forEach((t) => s.add(t)));
-    return Array.from(s).sort();
+    const tagsArray = Array.from(s).sort();
+    const folders = new Map<string, Set<string>>();
+    const flat: string[] = [];
+    for (const t of tagsArray) {
+      const m = /^([a-z]+):(.+)$/.exec(t);
+      if (m) {
+        const folder = m[1];
+        if (!folders.has(folder)) folders.set(folder, new Set());
+        folders.get(folder)!.add(t);
+      } else {
+        flat.push(t);
+      }
+    }
+    return {
+      allTags: tagsArray,
+      tagTree: {
+        folders: Array.from(folders.entries()).map(([folder, tags]) => ({
+          folder,
+          tags: Array.from(tags).sort(),
+        })),
+        flat: flat.sort(),
+      },
+    };
   }, [notes]);
 
   const pinned = useMemo(() => notes.filter((n) => n.pinned), [notes]);
@@ -253,9 +461,46 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
     [notes]
   );
 
-  function insertSyntax(prefix: string, suffix: string = "", placeholder = "") {
+  // ── Export / import handlers ───────────────────────────────────────
+  function exportNote(n: NoteDTO) {
+    const tags = n.tags.length ? `\ntags: [${n.tags.join(", ")}]` : "";
+    const fm = n.tags.length || n.pinned
+      ? `---\ntitle: ${JSON.stringify(n.title)}${tags}\npinned: ${n.pinned}\n---\n\n`
+      : "";
+    const blob = new Blob([fm + n.content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${n.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Note exported");
+  }
+
+  function exportAll() {
+    window.open("/api/notes/export?format=md", "_blank");
+  }
+
+  async function importFile(file: File) {
+    const text = await file.text();
+    try {
+      const r = await fetch("/api/notes/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: text }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Import failed");
+      toast.success(`Imported ${d.created} of ${d.total} notes`);
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function insertSyntax(prefix: string, suffix: string = "", placeholder: string = "") {
     if (!draft) return;
-    const ta = document.getElementById("note-textarea") as HTMLTextAreaElement | null;
+    const ta = textareaRef.current;
     if (!ta) {
       setDraft({ ...draft, content: draft.content + prefix + placeholder + suffix });
       return;
@@ -272,6 +517,8 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
     });
   }
 
+  const isDaily = draft ? isDailyNoteTitle(draft.title) : false;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -285,20 +532,69 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
               <div>
                 <CardTitle className="text-base text-slate-50">Notes &amp; Knowledge</CardTitle>
                 <CardDescription className="text-xs text-amber-400/90">
-                  Obsidian-style workspace · auto-saves · supports #tags, $TICKER refs, [[wiki-links]]
+                  Obsidian-grade workspace · daily notes · templates · Cmd+K · wiki-links · frontmatter · versioning
                 </CardDescription>
               </div>
             </div>
-            <Button onClick={startNew} size="sm" className="bg-amber-500 text-slate-950 hover:bg-amber-400">
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              New note
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                onClick={openDailyNote}
+                size="sm"
+                variant="outline"
+                className="border-cyan-700/60 bg-cyan-900/20 text-cyan-300 hover:bg-cyan-900/40 h-8"
+              >
+                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                Today&apos;s note
+              </Button>
+              <Button
+                onClick={() => setPaletteOpen(true)}
+                size="sm"
+                variant="outline"
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 h-8"
+                title="Cmd+K"
+              >
+                <CommandIcon className="mr-1.5 h-3.5 w-3.5" />
+                ⌘K
+              </Button>
+              <Button
+                onClick={exportAll}
+                size="sm"
+                variant="outline"
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 h-8"
+                title="Export all notes"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept=".md,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) importFile(f);
+                    e.target.value = "";
+                  }}
+                />
+                <span className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 h-8 px-2 text-xs">
+                  <Upload className="h-3.5 w-3.5" />
+                </span>
+              </label>
+              <Button
+                onClick={startNew}
+                size="sm"
+                className="bg-amber-500 text-slate-950 hover:bg-amber-400 h-8"
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                New note
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr_280px] gap-4">
-        {/* LEFT PANE: tag cloud, pinned, recent, search, view toggle */}
+        {/* LEFT PANE */}
         <div className="space-y-3">
           <Card className="border-slate-700 bg-slate-800/60">
             <CardContent className="p-3 space-y-3">
@@ -356,42 +652,90 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                 </Card>
               )}
 
-              {allTags.length > 0 && (
+              {tagTree.folders.length > 0 || tagTree.flat.length > 0 ? (
                 <Card className="border-slate-700 bg-slate-800/60">
                   <CardHeader className="pb-2 pt-3 px-3">
                     <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
                       <Tag className="h-3 w-3" /> Tags
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-2 pt-0 flex flex-wrap gap-1">
+                  <CardContent className="p-2 pt-0 space-y-1">
                     <button
                       onClick={() => setTagFilter(null)}
                       className={cn(
-                        "rounded-full border px-1.5 py-0.5 text-[10px]",
+                        "block w-full text-left rounded px-1.5 py-0.5 text-[10px]",
                         !tagFilter
-                          ? "border-amber-500 bg-amber-500/15 text-amber-300"
-                          : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+                          ? "bg-amber-500/15 text-amber-300"
+                          : "text-slate-400 hover:text-slate-200"
                       )}
                     >
-                      all
+                      all ({allTags.length})
                     </button>
-                    {allTags.slice(0, 40).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => setTagFilter(tagFilter === t ? null : t)}
-                        className={cn(
-                          "rounded-full border px-1.5 py-0.5 text-[10px] font-mono",
-                          tagFilter === t
-                            ? "border-amber-500 bg-amber-500/15 text-amber-300"
-                            : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
-                        )}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                    {/* Hierarchical folders */}
+                    {tagTree.folders.map(({ folder, tags }) => {
+                      const expanded = expandedTagFolders.has(folder);
+                      return (
+                        <div key={folder}>
+                          <button
+                            onClick={() =>
+                              setExpandedTagFolders((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(folder)) next.delete(folder);
+                                else next.add(folder);
+                                return next;
+                              })
+                            }
+                            className="flex items-center gap-1 w-full text-left rounded px-1 py-0.5 text-[10px] text-slate-300 hover:text-slate-100"
+                          >
+                            {expanded ? (
+                              <ChevronDown className="h-2.5 w-2.5" />
+                            ) : (
+                              <ChevronRight className="h-2.5 w-2.5" />
+                            )}
+                            <span className="font-mono text-cyan-300">{folder}/</span>
+                            <span className="text-slate-500">({tags.length})</span>
+                          </button>
+                          {expanded && (
+                            <div className="ml-3 mt-0.5 flex flex-wrap gap-1">
+                              {tags.map((t) => (
+                                <button
+                                  key={t}
+                                  onClick={() => setTagFilter(tagFilter === t ? null : t)}
+                                  className={cn(
+                                    "rounded-full border px-1.5 py-0.5 text-[10px] font-mono",
+                                    tagFilter === t
+                                      ? "border-amber-500 bg-amber-500/15 text-amber-300"
+                                      : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+                                  )}
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {/* Flat tags */}
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {tagTree.flat.slice(0, 30).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setTagFilter(tagFilter === t ? null : t)}
+                          className={cn(
+                            "rounded-full border px-1.5 py-0.5 text-[10px] font-mono",
+                            tagFilter === t
+                              ? "border-amber-500 bg-amber-500/15 text-amber-300"
+                              : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+                          )}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
-              )}
+              ) : null}
 
               <Card className="border-slate-700 bg-slate-800/60">
                 <CardHeader className="pb-2 pt-3 px-3">
@@ -438,7 +782,7 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
           )}
         </div>
 
-        {/* CENTER PANE: editor OR graph view OR empty state */}
+        {/* CENTER PANE */}
         <div className="min-w-0">
           {view === "graph" ? (
             <Card className="border-slate-700 bg-slate-800/60">
@@ -448,12 +792,12 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                   Knowledge Graph
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-400">
-                  Hover a node to highlight its connections · click to open
+                  Drag nodes · scroll to zoom · click to open · choose layout / color / filter
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {graphData ? (
-                  <GraphView
+                  <GraphViewEnhanced
                     data={graphData}
                     onOpenNode={(id) => {
                       const n = notes.find((x) => x.id === id);
@@ -480,6 +824,28 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                     placeholder="Note title"
                     className="h-9 bg-slate-900/70 border-slate-700 text-base font-semibold text-slate-100"
                   />
+                  {isDaily && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigateDay(-1)}
+                        className="border-slate-700 bg-slate-900/40 shrink-0"
+                        title="Previous day"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigateDay(1)}
+                        className="border-slate-700 bg-slate-900/40 shrink-0"
+                        title="Next day"
+                      >
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -491,6 +857,25 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                     title={draft.pinned ? "Unpin" : "Pin"}
                   >
                     {draft.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHistoryOpen(true)}
+                    disabled={!draft.id}
+                    className="border-slate-700 bg-slate-900/40 text-slate-400 shrink-0"
+                    title="History"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportNote(draft)}
+                    className="border-slate-700 bg-slate-900/40 text-slate-400 shrink-0"
+                    title="Export .md"
+                  >
+                    <Download className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     variant="outline"
@@ -507,6 +892,16 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
+
+                {/* Frontmatter editor */}
+                <FrontmatterEditor
+                  content={draft.content}
+                  onChange={(newContent) => setDraft({ ...draft, content: newContent })}
+                  existingTickers={Array.from(
+                    new Set(notes.flatMap((n) => n.tickerRefs))
+                  )}
+                />
+
                 {/* Toolbar */}
                 <div className="flex flex-wrap gap-1 border-b border-slate-700 pb-2">
                   <ToolBtn onClick={() => insertSyntax("**", "**", "bold")} icon={<Bold className="h-3 w-3" />} tip="Bold" />
@@ -519,13 +914,23 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                   <ToolBtn onClick={() => insertSyntax("$", "", "AAPL")} icon={<DollarSign className="h-3 w-3" />} tip="$TICKER" />
                   <ToolBtn onClick={() => insertSyntax("#", "", "tag")} icon={<Hash className="h-3 w-3" />} tip="#tag" />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[420px]">
+
+                {/* Editor + preview */}
+                <div className="relative grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[420px]">
                   <Textarea
                     id="note-textarea"
+                    ref={textareaRef}
                     value={draft.content}
                     onChange={(e) => setDraft({ ...draft, content: e.target.value })}
                     placeholder="Start writing. Try: $NVDA breaking out, see [[NVDA Thesis]]. Add #tags with #hashtag."
                     className="bg-slate-900/70 border-slate-700 text-slate-100 placeholder:text-slate-500 font-mono text-sm min-h-[420px] resize-y"
+                  />
+                  {/* Wiki autocomplete overlay */}
+                  <WikiAutocomplete
+                    textareaRef={textareaRef}
+                    content={draft.content}
+                    onChange={(newContent) => setDraft({ ...draft, content: newContent })}
+                    existingNotes={notes}
                   />
                   <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 overflow-y-auto max-h-[60vh] aib-scroll">
                     <Markdown content={draft.content || "_Preview will appear here_"} />
@@ -552,8 +957,10 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
                   Start a new note
                 </h3>
                 <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto">
-                  Capture research thoughts, link them with <code className="rounded bg-slate-800 px-1 text-amber-300">{"[[wiki-links]]"}</code>,
-                  tag tickers with <code className="rounded bg-slate-800 px-1 text-amber-300">{"$TICKER"}</code>, and use{" "}
+                  Capture research thoughts, link them with{" "}
+                  <code className="rounded bg-slate-800 px-1 text-amber-300">{"[[wiki-links]]"}</code>,
+                  tag tickers with{" "}
+                  <code className="rounded bg-slate-800 px-1 text-amber-300">{"$TICKER"}</code>, and use{" "}
                   <code className="rounded bg-slate-800 px-1 text-amber-300">{"#hashtags"}</code> for topics.
                 </p>
                 <Button
@@ -582,7 +989,7 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
           )}
         </div>
 
-        {/* RIGHT PANE: backlinks + outgoing links + ticker refs */}
+        {/* RIGHT PANE */}
         <div className="space-y-3">
           {draft && (
             <>
@@ -685,6 +1092,69 @@ export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
           )}
         </div>
       </div>
+
+      {/* Command palette */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        notes={notes}
+        onNewNote={createBlank}
+        onNewNoteFromTemplate={createFromTemplate}
+        onOpenDailyNote={openDailyNote}
+        onToggleGraph={() => setView((v) => (v === "list" ? "graph" : "list"))}
+        onNavigate={(id, ticker) => {
+          if (onNavigate) {
+            onNavigate(id, ticker);
+          } else {
+            onSelectTicker(ticker || "");
+          }
+        }}
+        onOpenNote={(id) => {
+          const n = notes.find((x) => x.id === id);
+          if (n) openNote(n);
+        }}
+        onSelectTicker={onSelectTicker}
+      />
+
+      {/* Template picker */}
+      <Dialog open={templatePickerOpen} onOpenChange={setTemplatePickerOpen}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-700 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Plus className="h-4 w-4 text-amber-400" />
+              New note — pick a template
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Pre-defined templates auto-fill the structure. You can edit anything after.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto aib-scroll">
+            {PREDEFINED_TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => createFromTemplate(t.id)}
+                className="text-left rounded-md border border-slate-700 bg-slate-900/40 p-3 hover:border-amber-500/60 hover:bg-amber-500/5"
+              >
+                <div className="text-sm font-semibold text-slate-100">{t.name}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">{t.description}</div>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Note history */}
+      <NoteHistory
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        noteId={draft?.id ?? null}
+        currentContent={draft?.content ?? ""}
+        onRestore={(content) => {
+          if (draft) {
+            setDraft({ ...draft, content });
+          }
+        }}
+      />
     </div>
   );
 }
@@ -726,205 +1196,6 @@ function StatRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between border-b border-slate-700/40 pb-1">
       <span className="text-slate-400">{label}</span>
       <span className="font-mono font-semibold text-slate-100">{value}</span>
-    </div>
-  );
-}
-
-// ── Graph view (force-directed SVG) ──────────────────────────────────
-interface GraphViewProps {
-  data: {
-    nodes: { id: string; title: string; tags: string[]; pinned: boolean; linkCount: number }[];
-    links: { source: string; target: string }[];
-    stats: { totalNodes: number; totalLinks: number; avgLinksPerNote: string; orphanCount: number };
-  };
-  onOpenNode: (id: string) => void;
-}
-
-const TAG_COLORS = ["#f59e0b", "#22d3ee", "#34d399", "#a78bfa", "#fb7185", "#facc15", "#60a5fa"];
-
-function GraphView({ data, onOpenNode }: GraphViewProps) {
-  const [hovered, setHovered] = useState<string | null>(null);
-  const sizeRef = useRef<HTMLDivElement>(null);
-  const [dims, setDims] = useState({ w: 800, h: 420 });
-
-  useEffect(() => {
-    function update() {
-      if (!sizeRef.current) return;
-      const r = sizeRef.current.getBoundingClientRect();
-      setDims({ w: Math.max(320, r.width), h: 420 });
-    }
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
-
-  // Compute simple force layout (deterministic circular layout with center gravity)
-  const layout = useMemo(() => {
-    const { w, h } = dims;
-    const cx = w / 2;
-    const cy = h / 2;
-    const radius = Math.min(w, h) / 2 - 50;
-    const nodes = data.nodes;
-    const map = new Map<string, { id: string; title: string; tags: string[]; pinned: boolean; linkCount: number; x: number; y: number; vx: number; vy: number }>();
-    nodes.forEach((n, i) => {
-      const angle = (i / Math.max(1, nodes.length)) * Math.PI * 2;
-      const r = nodes.length === 1 ? 0 : radius * 0.85;
-      map.set(n.id, {
-        ...n,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        vx: 0,
-        vy: 0,
-      });
-    });
-
-    // Run a few iterations of a simple spring layout
-    const linkMap = new Map<string, Set<string>>();
-    for (const l of data.links) {
-      if (!linkMap.has(l.source)) linkMap.set(l.source, new Set());
-      if (!linkMap.has(l.target)) linkMap.set(l.target, new Set());
-      linkMap.get(l.source)!.add(l.target);
-      linkMap.get(l.target)!.add(l.source);
-    }
-
-    const arr = Array.from(map.values());
-    const k = 80; // ideal spring length
-    const iterations = 120;
-    for (let it = 0; it < iterations; it++) {
-      // Repulsive forces between all pairs
-      for (let i = 0; i < arr.length; i++) {
-        for (let j = i + 1; j < arr.length; j++) {
-          const a = arr[i];
-          const b = arr[j];
-          let dx = a.x - b.x;
-          let dy = a.y - b.y;
-          let dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-          if (dist > 300) continue;
-          const force = (k * k) / dist;
-          const fx = (dx / dist) * force * 0.05;
-          const fy = (dy / dist) * force * 0.05;
-          a.vx += fx;
-          a.vy += fy;
-          b.vx -= fx;
-          b.vy -= fy;
-        }
-      }
-      // Attractive forces for connected pairs
-      for (const l of data.links) {
-        const a = map.get(l.source);
-        const b = map.get(l.target);
-        if (!a || !b) continue;
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        let dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-        const force = (dist * dist) / k;
-        const fx = (dx / dist) * force * 0.05;
-        const fy = (dy / dist) * force * 0.05;
-        a.vx -= fx;
-        a.vy -= fy;
-        b.vx += fx;
-        b.vy += fy;
-      }
-      // Apply velocity with damping, plus center gravity
-      for (const n of arr) {
-        n.vx += (cx - n.x) * 0.005;
-        n.vy += (cy - n.y) * 0.005;
-        n.x += n.vx * 0.4;
-        n.y += n.vy * 0.4;
-        n.vx *= 0.85;
-        n.vy *= 0.85;
-        // keep inside bounds
-        const pad = 30;
-        if (n.x < pad) n.x = pad;
-        if (n.x > w - pad) n.x = w - pad;
-        if (n.y < pad) n.y = pad;
-        if (n.y > h - pad) n.y = h - pad;
-      }
-    }
-
-    return { nodes: arr, linkMap };
-  }, [data, dims]);
-
-  if (data.nodes.length === 0) {
-    return (
-      <div className="h-[420px] flex items-center justify-center text-slate-500 text-sm">
-        No notes to graph yet. Create a few notes with [[wiki-links]] between them.
-      </div>
-    );
-  }
-
-  const hoveredNeighbors = hovered ? (layout.linkMap.get(hovered) ?? new Set<string>()) : null;
-  function isDimmed(id: string) {
-    if (!hovered) return false;
-    if (id === hovered) return false;
-    if (hoveredNeighbors?.has(id)) return false;
-    return true;
-  }
-
-  function primaryTagColor(tags: string[]): string {
-    if (!tags || tags.length === 0) return "#64748b";
-    const first = tags[0];
-    let hash = 0;
-    for (let i = 0; i < first.length; i++) hash = (hash * 31 + first.charCodeAt(i)) | 0;
-    return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
-  }
-
-  return (
-    <div ref={sizeRef} className="w-full">
-      <svg width={dims.w} height={dims.h} className="block">
-        {/* Edges */}
-        {data.links.map((l, i) => {
-          const a = layout.nodes.find((n) => n.id === l.source);
-          const b = layout.nodes.find((n) => n.id === l.target);
-          if (!a || !b) return null;
-          const dimmed = hovered && hovered !== l.source && hovered !== l.target;
-          return (
-            <line
-              key={i}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={dimmed ? "#1e293b" : "#475569"}
-              strokeWidth={dimmed ? 1 : 1.5}
-              opacity={dimmed ? 0.3 : 0.7}
-            />
-          );
-        })}
-        {/* Nodes */}
-        {layout.nodes.map((n) => {
-          const color = primaryTagColor(n.tags);
-          const r = 8 + Math.min(12, n.linkCount * 2);
-          const dimmed = isDimmed(n.id);
-          return (
-            <g
-              key={n.id}
-              transform={`translate(${n.x}, ${n.y})`}
-              style={{ cursor: "pointer", opacity: dimmed ? 0.3 : 1 }}
-              onMouseEnter={() => setHovered(n.id)}
-              onMouseLeave={() => setHovered(null)}
-              onClick={() => onOpenNode(n.id)}
-            >
-              <circle
-                r={r}
-                fill={color}
-                stroke={n.pinned ? "#fbbf24" : "#0f172a"}
-                strokeWidth={n.pinned ? 3 : 1.5}
-                opacity={0.9}
-              />
-              <text
-                y={r + 11}
-                textAnchor="middle"
-                fill="#cbd5e1"
-                fontSize={10}
-                fontWeight={n.id === hovered ? 700 : 400}
-              >
-                {n.title.length > 24 ? n.title.slice(0, 22) + "…" : n.title}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { extractMeta, toDTO } from "@/lib/notes";
+import { parseFrontmatter } from "@/components/notes/daily-notes";
 
 export const runtime = "nodejs";
 
@@ -9,6 +10,7 @@ export async function GET(req: NextRequest) {
   const url = req.nextUrl;
   const tag = url.searchParams.get("tag");
   const q = url.searchParams.get("q");
+  const daily = url.searchParams.get("daily");
 
   const notes = await db.note.findMany({
     orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
@@ -24,6 +26,9 @@ export async function GET(req: NextRequest) {
         return false;
       }
     });
+  }
+  if (daily === "1") {
+    filtered = filtered.filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n.title));
   }
   if (q && q.trim()) {
     const needle = q.trim().toLowerCase();
@@ -60,6 +65,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Parse frontmatter for date field (used by daily notes)
+  const { fm } = parseFrontmatter(content);
+  const dateField = fm.date ?? null;
+
   const created = await db.note.create({
     data: {
       title,
@@ -68,6 +77,7 @@ export async function POST(req: NextRequest) {
       tickerRefs: JSON.stringify(meta.tickerRefs),
       links: JSON.stringify(meta.links),
       pinned: !!body.pinned,
+      date: dateField,
     },
   });
 

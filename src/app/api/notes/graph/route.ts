@@ -42,6 +42,8 @@ export async function GET() {
       tags,
       pinned: n.pinned,
       linkCount: 0,
+      createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : n.createdAt,
+      wordCount: n.content.split(/\s+/).filter(Boolean).length,
     });
   }
 

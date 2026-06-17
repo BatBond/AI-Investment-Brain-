@@ -613,7 +613,8 @@ function HoldingsTable({
                         </td>
                         <td
                           className={cn(
-                            "px-2 py-1.5 font-mono tabular-nums text-slate-100",
+                            "px-2 py-1.5 font-mono tabular-nums",
+                            p._interpolated ? "text-slate-300" : "text-slate-100",
                             p._priceChanged === "up" && "flash-up",
                             p._priceChanged === "down" && "flash-down"
                           )}
@@ -1386,15 +1387,35 @@ export function Portfolio({ onNavigate, onSelectTicker }: PortfolioProps) {
             {data && (
               <Badge
                 variant="outline"
-                className="border-emerald-700/60 bg-emerald-900/30 text-emerald-300 text-[10px]"
+                className={cn(
+                  "text-[10px]",
+                  portfolioStream.status === "stale"
+                    ? "border-amber-700/60 bg-amber-900/20 text-amber-300"
+                    : portfolioStream.status === "interpolating"
+                      ? "border-cyan-700/60 bg-cyan-900/20 text-cyan-300"
+                      : "border-emerald-700/60 bg-emerald-900/30 text-emerald-300"
+                )}
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 live-dot mr-1" />
-                LIVE · {data.totals.liveCount}/{data.totals.totalCount}
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full mr-1",
+                    portfolioStream.status === "stale"
+                      ? "bg-amber-400"
+                      : portfolioStream.status === "interpolating"
+                        ? "bg-cyan-400 animate-pulse"
+                        : "bg-emerald-400 live-dot"
+                  )}
+                />
+                {portfolioStream.status === "stale"
+                  ? `STALE · last ${Math.max(0, Math.round((Date.now() - portfolioStream.lastUpdate) / 1000))}s ago`
+                  : portfolioStream.status === "interpolating"
+                    ? "LIVE · interpolating"
+                    : `LIVE · polling · ${data.totals.liveCount}/${data.totals.totalCount}`}
               </Badge>
             )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Real-time P&amp;L · 2-second polling · Yahoo Finance
+            Real-time P&amp;L · 1-second polling with client-side interpolation · Yahoo Finance
           </p>
         </div>
         <div className="flex items-center gap-2">

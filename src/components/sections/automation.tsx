@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { EMAIL_TEMPLATES, type EmailTemplate } from "@/lib/email-templates";
+import { EMAIL_TEMPLATES, DEFAULT_CRON, type EmailTemplate } from "@/lib/email-templates";
 
 interface ScheduledEmail {
   id: string;
@@ -84,7 +84,7 @@ export function Automation() {
   const [newName, setNewName] = useState("");
   const [newRecipient, setNewRecipient] = useState("");
   const [newTemplate, setNewTemplate] = useState<EmailTemplate>("morning-brief");
-  const [newCron, setNewCron] = useState("0 8 * * *");
+  const [newCron, setNewCron] = useState<string>(DEFAULT_CRON["morning-brief"]);
   const [newTicker, setNewTicker] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -223,7 +223,7 @@ export function Automation() {
       setNewName("");
       setNewRecipient("");
       setNewTicker("");
-      setNewCron("0 8 * * *");
+      setNewCron(DEFAULT_CRON[newTemplate]);
       await refreshScheduled();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -488,7 +488,14 @@ export function Automation() {
                 placeholder="recipient@example.com"
                 className="h-8 bg-slate-900/70 border-slate-700 text-xs text-slate-100"
               />
-              <Select value={newTemplate} onValueChange={(v) => setNewTemplate(v as EmailTemplate)}>
+              <Select
+                value={newTemplate}
+                onValueChange={(v) => {
+                  setNewTemplate(v as EmailTemplate);
+                  // Auto-fill default cron for the chosen template
+                  setNewCron(DEFAULT_CRON[v as EmailTemplate] || "0 8 * * *");
+                }}
+              >
                 <SelectTrigger className="h-8 bg-slate-900/70 border-slate-700 text-xs text-slate-100">
                   <SelectValue />
                 </SelectTrigger>

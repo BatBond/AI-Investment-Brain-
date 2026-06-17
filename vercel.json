@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "bun run db:generate && next build",
+  "installCommand": "bun install",
+  "crons": [
+    {
+      "path": "/api/cron/scheduled-emails",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sentiment-scan",
+      "schedule": "0,30 * * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/analyst/[moduleId]/route.ts": { "maxDuration": 60 },
+    "src/app/api/personas/route.ts": { "maxDuration": 60 },
+    "src/app/api/agent/chat/route.ts": { "maxDuration": 60 },
+    "src/app/api/email/send-now/route.ts": { "maxDuration": 60 },
+    "src/app/api/sentiment/scan/route.ts": { "maxDuration": 60 }
+  }
+}

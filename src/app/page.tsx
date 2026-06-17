@@ -137,7 +137,10 @@ export default function Home() {
             )}
             {active === "mck-macro" && <MckMacro />}
             {active === "notes-knowledge" && (
-              <NotesKnowledge onSelectTicker={selectTicker} />
+              <NotesKnowledge
+                onSelectTicker={selectTicker}
+                onNavigate={navigate}
+              />
             )}
             {active === "knowledge-graph" && <KnowledgeGraph />}
             {active === "automation" && <Automation />}

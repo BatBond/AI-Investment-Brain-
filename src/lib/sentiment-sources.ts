@@ -43,9 +43,8 @@ export async function fetchYahooNews(ticker: string): Promise<RawArticle[]> {
     const s = await yf.search(query, { newsCount: 15, quotesCount: 0 });
     return (s.news || []).map((n) => {
       // yahoo-finance2 v3 returns providerPublishTime as a Date object
-      // (already a real Date — don't multiply by 1000).
       const pub = n.providerPublishTime;
-      const publishedAt =
+      let publishedAt =
         pub instanceof Date
           ? pub
           : typeof pub === "number"
@@ -53,6 +52,11 @@ export async function fetchYahooNews(ticker: string): Promise<RawArticle[]> {
             : typeof pub === "string"
               ? new Date(pub)
               : new Date();
+      if (isNaN(publishedAt.getTime())) publishedAt = new Date();
+      // Clamp to a reasonable range (30 days ago → now)
+      const now = Date.now();
+      const minDate = now - 30 * 24 * 60 * 60 * 1000;
+      publishedAt = new Date(Math.min(now, Math.max(minDate, publishedAt.getTime())));
       return {
         ticker,
         source: "yahoo" as const,
@@ -73,18 +77,26 @@ export async function fetchGoogleNews(query: string): Promise<RawArticle[]> {
   try {
     const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query + " stock")}&hl=en-US&gl=US&ceid=US:en`;
     const feed = await rss.parseURL(url);
-    return (feed.items || []).slice(0, 15).map((item) => ({
-      ticker: query,
-      source: "google" as const,
-      title: item.title || "",
-      url: item.link || "",
-      publisher:
-        (item.creator as string | undefined) ||
-        (item.source as { title?: string } | undefined)?.title ||
-        "Google News",
-      publishedAt: item.isoDate ? new Date(item.isoDate) : new Date(),
-      relatedTickers: [],
-    }));
+    return (feed.items || []).slice(0, 15).map((item) => {
+      // Clamp Google News dates too
+      let publishedAt = item.isoDate ? new Date(item.isoDate) : new Date();
+      if (isNaN(publishedAt.getTime())) publishedAt = new Date();
+      const now = Date.now();
+      const minDate = now - 30 * 24 * 60 * 60 * 1000;
+      publishedAt = new Date(Math.min(now, Math.max(minDate, publishedAt.getTime())));
+      return {
+        ticker: query,
+        source: "google" as const,
+        title: item.title || "",
+        url: item.link || "",
+        publisher:
+          (item.creator as string | undefined) ||
+          (item.source as { title?: string } | undefined)?.title ||
+          "Google News",
+        publishedAt,
+        relatedTickers: [],
+      };
+    });
   } catch (e) {
     console.error("[sentiment] google fetch failed:", e instanceof Error ? e.message : String(e));
     return [];
@@ -101,13 +113,23 @@ export async function fetchRedditNews(ticker: string): Promise<RawArticle[]> {
         const url = `https://www.reddit.com/r/${sub}/search.rss?q=${encodeURIComponent(query)}&restrict_sr=on&sort=new&limit=5`;
         const feed = await rss.parseURL(url);
         for (const item of feed.items || []) {
+          // ── BUG FIX: clamp publishedAt to a reasonable range.
+          // Reddit RSS sometimes returns wildly out-of-range dates (e.g.
+          // year 58428) which break Prisma's DateTime field.
+          let publishedAt = item.isoDate ? new Date(item.isoDate) : new Date();
+          if (isNaN(publishedAt.getTime())) publishedAt = new Date();
+          const now = Date.now();
+          const minDate = now - 30 * 24 * 60 * 60 * 1000; // 30 days ago
+          publishedAt = new Date(
+            Math.min(now, Math.max(minDate, publishedAt.getTime()))
+          );
           all.push({
             ticker,
             source: "reddit" as const,
             title: item.title || "",
             url: item.link || "",
             publisher: `r/${sub}`,
-            publishedAt: item.isoDate ? new Date(item.isoDate) : new Date(),
+            publishedAt,
             relatedTickers: [],
           });
         }
@@ -127,15 +149,27 @@ export async function fetchTwitterNews(ticker: string): Promise<RawArticle[]> {
       const url = `https://${inst}/search/rss?f=tweets&q=${encodeURIComponent(query)}`;
       const feed = await rss.parseURL(url);
       if (feed.items && feed.items.length > 0) {
-        return feed.items.slice(0, 10).map((item) => ({
-          ticker,
-          source: "twitter" as const,
-          title: item.title || "",
-          url: item.link || "",
-          publisher: "Twitter/X",
-          publishedAt: item.isoDate ? new Date(item.isoDate) : new Date(),
-          relatedTickers: [],
-        }));
+        return feed.items.slice(0, 10).map((item) => {
+          // ── BUG FIX: clamp publishedAt to a reasonable range.
+          // Nitter/Twitter RSS sometimes returns wildly out-of-range or
+          // future dates which break Prisma's DateTime field.
+          let publishedAt = item.isoDate ? new Date(item.isoDate) : new Date();
+          if (isNaN(publishedAt.getTime())) publishedAt = new Date();
+          const now = Date.now();
+          const minDate = now - 30 * 24 * 60 * 60 * 1000; // 30 days ago
+          publishedAt = new Date(
+            Math.min(now, Math.max(minDate, publishedAt.getTime()))
+          );
+          return {
+            ticker,
+            source: "twitter" as const,
+            title: item.title || "",
+            url: item.link || "",
+            publisher: "Twitter/X",
+            publishedAt,
+            relatedTickers: [],
+          };
+        });
       }
     } catch {
       // try next instance
@@ -146,9 +180,11 @@ export async function fetchTwitterNews(ticker: string): Promise<RawArticle[]> {
 
 // ── LLM scoring ─────────────────────────────────────────────────────
 
+/** Score one article with retries on 429 (rate-limit) using exponential
+ *  backoff. Returns null if all retries fail. */
 async function scoreArticleWithLLM(
   article: RawArticle
-): Promise<{ summary: string; sentiment: SentimentLabel; sentimentScore: number }> {
+): Promise<{ summary: string; sentiment: SentimentLabel; sentimentScore: number } | null> {
   const prompt = `Analyze this financial news headline and return JSON:
 Title: ${article.title}
 Source: ${article.source} (${article.publisher})
@@ -158,35 +194,51 @@ Return ONLY this JSON (no other text):
 - bullish (positive for the stock/market): score 0.2 to 1.0
 - bearish (negative): score -1.0 to -0.2
 - neutral (mixed or factual): score -0.2 to 0.2`;
-  try {
-    const response = await runChat(
-      [
-        { role: "system", content: "You are a financial sentiment analyst. Return ONLY valid JSON." },
-        { role: "user", content: prompt },
-      ],
-      { temperature: 0.2, maxTokens: 200 }
-    );
-    const jsonMatch = response.match(/\{[\s\S]+\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const sentimentStr = String(parsed.sentiment || "neutral").toLowerCase();
-      const sentiment: SentimentLabel =
-        sentimentStr === "bullish" || sentimentStr === "bearish"
-          ? (sentimentStr as SentimentLabel)
-          : "neutral";
-      return {
-        summary: String(parsed.summary || ""),
-        sentiment,
-        sentimentScore:
-          typeof parsed.score === "number"
-            ? Math.max(-1, Math.min(1, parsed.score))
-            : 0,
-      };
+
+  const maxRetries = 3;
+  const delays = [2000, 4000, 8000]; // exponential backoff
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await runChat(
+        [
+          { role: "system", content: "You are a financial sentiment analyst. Return ONLY valid JSON." },
+          { role: "user", content: prompt },
+        ],
+        { temperature: 0.2, maxTokens: 200 }
+      );
+      const jsonMatch = response.match(/\{[\s\S]+\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const sentimentStr = String(parsed.sentiment || "neutral").toLowerCase();
+        const sentiment: SentimentLabel =
+          sentimentStr === "bullish" || sentimentStr === "bearish"
+            ? (sentimentStr as SentimentLabel)
+            : "neutral";
+        return {
+          summary: String(parsed.summary || ""),
+          sentiment,
+          sentimentScore:
+            typeof parsed.score === "number"
+              ? Math.max(-1, Math.min(1, parsed.score))
+              : 0,
+        };
+      }
+      return null;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const is429 = msg.includes("429") || msg.includes("rate") || msg.includes("Rate");
+      if (is429 && attempt < maxRetries - 1) {
+        console.warn(
+          `[sentiment] 429 on attempt ${attempt + 1}/${maxRetries}, retrying in ${delays[attempt]}ms…`
+        );
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+        continue;
+      }
+      console.error("[sentiment] LLM scoring failed:", msg);
+      return null;
     }
-  } catch (e) {
-    console.error("[sentiment] LLM scoring failed:", e instanceof Error ? e.message : String(e));
   }
-  return { summary: "", sentiment: "neutral", sentimentScore: 0 };
+  return null;
 }
 
 // ── Master scan ─────────────────────────────────────────────────────
@@ -196,10 +248,11 @@ Return ONLY this JSON (no other text):
 // upserted with neutral sentiment; they'll be re-scored on subsequent
 // scans (the scoreArticleWithLLM call uses summary="" + neutral as a
 // sentinel that "this one still needs scoring").
-const MAX_ARTICLES_TO_SCORE_PER_SCAN = 12;
+const MAX_ARTICLES_TO_SCORE_PER_SCAN = 8;
 // Inter-call delay (ms) — Z.ai's free tier rate-limits aggressively,
-// so we space out sequential LLM calls. 1200ms keeps us under ~1 req/s.
-const LLM_CALL_DELAY_MS = 1200;
+// so we space out sequential LLM calls. 2000ms keeps us comfortably
+// under ~0.5 req/s and gives 429 retries room to recover.
+const LLM_CALL_DELAY_MS = 2000;
 
 export async function scanSentiment(ticker: string = "MARKET"): Promise<ScoredArticle[]> {
   const [yahoo, google, reddit, twitter] = await Promise.allSettled([
@@ -255,15 +308,25 @@ export async function scanSentiment(ticker: string = "MARKET"): Promise<ScoredAr
   const alreadyScored = unique.filter((a) => existingUrls.has(a.url));
 
   // LLM scoring — sequential with delay to respect Z.ai's rate limit
-  // (parallel batches trigger 429s quickly). Each call gets retried
-  // 3x with exponential backoff inside runChat(), so this loop just
-  // ensures we don't fire too many concurrent requests.
+  // (parallel batches trigger 429s quickly). scoreArticleWithLLM retries
+  // 3x with exponential backoff on 429s; this loop adds the inter-call
+  // spacing.
   const scored: ScoredArticle[] = [];
   for (let i = 0; i < toScore.length; i++) {
     const a = toScore[i];
     try {
       const score = await scoreArticleWithLLM(a);
-      scored.push({ ...a, ...score });
+      if (score) {
+        scored.push({ ...a, ...score });
+      } else {
+        // All retries exhausted — store as neutral
+        scored.push({
+          ...a,
+          summary: "",
+          sentiment: "neutral",
+          sentimentScore: 0,
+        });
+      }
     } catch {
       // On failure, still store the article with neutral sentiment
       scored.push({

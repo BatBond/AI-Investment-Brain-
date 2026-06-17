@@ -345,21 +345,104 @@ node scripts/seed_portfolio.js     # Seed portfolio from upload/Portfolio_Positi
 
 ## 🚢 Deployment
 
-### Vercel (recommended)
-1. Push to GitHub
-2. Import repo at [vercel.com/new](https://vercel.com/new)
-3. Add env vars (DATABASE_URL, SMTP_*, optional API keys)
-4. Deploy
+### Vercel (recommended — takes ~5 minutes)
 
-**Note:** For Vercel, swap SQLite for PostgreSQL (Neon, Supabase) — SQLite doesn't persist on serverless. Update `prisma/schema.prisma` datasource provider to `"postgresql"`.
+The repo is pre-configured for Vercel with:
+- `vercel.json` — cron jobs for scheduled emails + sentiment scans
+- `scripts/select-schema.sh` — auto-detects SQLite (local) vs PostgreSQL (production)
+- `prisma/schema.sqlite.prisma` + `prisma/schema.postgres.prisma` — both schemas ready
+- `src/app/api/cron/*` — serverless cron endpoints (replace in-process scheduler)
 
-### Self-hosted
+#### Step-by-step:
+
+1. **Push to GitHub** (already done if you cloned from GitHub)
+
+2. **Create a free PostgreSQL database** (pick one):
+   - **Neon** (recommended): https://neon.tech — sign up, create project, copy connection string
+   - **Supabase**: https://supabase.com — create project, copy Database URL
+   - **Vercel Postgres**: https://vercel.com/docs/storage — create in Vercel dashboard
+
+3. **Import repo on Vercel**:
+   - Go to https://vercel.com/new
+   - Import `BatBond/AI-Investment-Brain-`
+   - Vercel auto-detects Next.js — no framework config needed
+
+4. **Add environment variables** (Vercel dashboard → Settings → Environment Variables):
+   ```
+   DATABASE_URL=postgresql://user:password@host/db?sslmode=require
+   ZAI_API_KEY=your-zai-api-key
+   CRON_SECRET=<generate with: openssl rand -hex 32>
+   # Optional:
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=your-email@gmail.com
+   SMTP_PASS=your-app-password
+   EMAIL_FROM=AI Investment Brain <your-email@gmail.com>
+   NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
+   ```
+
+5. **Deploy** — Vercel will:
+   - Run `bun install`
+   - Run `postinstall` → `select-schema.sh` (switches to PostgreSQL schema, runs `prisma generate`)
+   - Run `vercel-build` → `select-schema.sh && next build`
+   - Set up Cron Jobs from `vercel.json`
+
+6. **Push database schema** (one-time, after first deploy):
+   - Local terminal:
+     ```bash
+     DATABASE_URL="postgresql://user:password@host/db?sslmode=require" bun run db:push
+     ```
+   - Or use Vercel CLI:
+     ```bash
+     vercel env pull .env.local
+     bun run db:push
+     ```
+
+7. **Seed portfolio** (optional, if you have an xlsx):
+   ```bash
+   DATABASE_URL="postgresql://..." node scripts/seed_portfolio.js
+   ```
+
+8. **Verify cron jobs** (Vercel dashboard → your project → Cron tab):
+   - `/api/cron/scheduled-emails` — runs every minute
+   - `/api/cron/sentiment-scan` — runs every 30 min
+   - Both require `CRON_SECRET` env var for security
+
+#### Vercel-specific notes:
+
+- **SQLite doesn't work on Vercel** — serverless functions don't persist local files. The `select-schema.sh` script auto-detects this and switches to PostgreSQL when `DATABASE_URL` starts with `postgres://` or `postgresql://`.
+- **`node-cron` doesn't work on serverless** — replaced by Vercel Cron Jobs (defined in `vercel.json`). The in-process scheduler (`src/lib/scheduler.ts`) is automatically disabled in production.
+- **Long-running LLM calls** — Vercel Hobby plan has 60s function timeout. The `vercel.json` sets `maxDuration: 60` for analyst/personas/agent/email/sentiment routes. Pro plan allows up to 300s.
+- **WebSocket mini-service** — not deployed to Vercel (no persistent processes). The app uses HTTP polling + client-side interpolation instead, which works great on serverless.
+
+### Self-hosted (Docker / VPS)
+
 ```bash
+# Clone and install
+git clone https://github.com/BatBond/AI-Investment-Brain-.git
+cd AI-Investment-Brain-
+bun install
+
+# Configure
+cp .env.example .env
+# Edit .env with your DATABASE_URL, ZAI_API_KEY, SMTP_*, etc.
+
+# Push schema + build
+bun run db:push
 bun run build
+
+# Start production server
 bun run start
 ```
 
-Use PM2 or systemd for process management. The email scheduler runs in-process — for production, consider extracting it to a separate worker.
+Use PM2 or systemd for process management:
+```bash
+pm2 start "bun run start" --name ai-brain
+pm2 save
+pm2 startup
+```
+
+For self-hosted, the in-process `node-cron` scheduler (`src/lib/scheduler.ts`) handles scheduled emails + sentiment scans automatically. No need for Vercel Cron.
 
 ---
 

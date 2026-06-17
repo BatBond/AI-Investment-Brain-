@@ -45,6 +45,38 @@ export async function generateEmailBody(
     case "dcf-deepdive":
       userPrompt = `Generate a DCF deep-dive email for ${opts.ticker || "AAPL"}. Include a summary table with 5Y revenue projection (Year, Revenue $B, YoY %), WACC breakdown, terminal value (both methods), fair value vs current price (gap %), and verdict (Undervalued/Fairly Valued/Overvalued). HTML email format with a small summary table and inline CSS (dark theme: bg #0f172a, accent amber #f59e0b).`;
       break;
+    case "morning-top-20":
+      userPrompt = `Perform a comprehensive market scan and identify the TOP 20 STOCKS TO BUY for a 3-6 month investment timeframe.
+
+For each stock, provide:
+1. Ticker symbol
+2. Company name
+3. Current price (use representative sample data)
+4. Conviction score (1-10)
+5. Investment thesis (2-3 sentences)
+6. Catalyst(s) expected in next 3-6 months
+7. Entry price zone
+8. Target price (12-month)
+9. Stop-loss level
+10. Risk rating (Low/Medium/High)
+11. Sector
+
+Diversify across sectors (no more than 4 stocks per sector). Include a mix of:
+- 5 large-cap value stocks (defensive)
+- 5 large-cap growth stocks
+- 4 mid-cap momentum stocks
+- 3 dividend income stocks
+- 3 speculative high-conviction picks
+
+Format as a professional HTML email with:
+- Executive summary at the top (1 paragraph + key stats: avg conviction, sectors covered, avg risk)
+- Full table of 20 stocks with all 11 columns
+- "Top 5 Highest Conviction" callout section
+- "Risk Warnings" section at the bottom
+- Disclaimer at the bottom
+
+Use clean inline-styled HTML. Subject line format: "Daily Top 20 Stocks — <today's date>".`;
+      break;
     default:
       userPrompt = `Generate a custom research email${opts.ticker ? ` about ${opts.ticker}` : ""}. Cover thesis, valuation, risks, and a recommendation. HTML format with inline CSS (dark theme: bg #0f172a, accent amber #f59e0b).`;
   }
@@ -62,7 +94,7 @@ export async function generateEmailBody(
       },
       { role: "user", content: userPrompt },
     ],
-    { temperature: 0.5, maxTokens: 2200 }
+    { temperature: 0.5, maxTokens: template === "morning-top-20" ? 6000 : 2200 }
   );
 
   const m = body.match(/^SUBJECT:\s*(.+?)\n([\s\S]+)$/);

@@ -30,14 +30,26 @@ After your markdown analysis, append a final section titled \`## Chart Data\` co
 
 \`<!--CHART_JSON:{"type":"line","title":"5Y Revenue Projection","data":[{"x":"2025","y":402.1},{"x":"2026","y":448.3}],"xLabel":"Year","yLabel":"Revenue ($B)"}-->\`
 
-Each chart spec must be a single-line HTML comment starting with \`<!--CHART_JSON:\` and ending with \`-->\`. Use the chart types: line, bar, pie, heatmap, candlestick, table. Each spec must have a \`type\` and the type-specific fields:
+Each chart spec must be a single-line HTML comment starting with \`<!--CHART_JSON:\` and ending with \`-->\`. You may append chart specs in the format \`<!--CHART_JSON:{...}-->\` (one per line). Use any of: line, area, bar, stackedBar, pie, donut, heatmap, candlestick, candlestick-enhanced, scatter, gauge, treemap, comparison-line, waterfall, table, gallery. For gallery, use \`{ type: 'gallery', charts: [...], columns: 2 }\`.
 
-- line: { type:"line", title?:string, data:[{x:string|number, y:number}], xLabel?:string, yLabel?:string, color?:string }
-- bar: { type:"bar", title?:string, data:[{x:string, y:number, color?:string}], color?:string }
-- pie: { type:"pie", title?:string, data:[{name:string, value:number}], colors?:string[] }
-- heatmap: { type:"heatmap", title?:string, rows:string[], cols:string[], values:number[][] }
-- candlestick: { type:"candlestick", title?:string, data:[{date:string, open:number, high:number, low:number, close:number}] }
-- table: { type:"table", title?:string, headers:string[], rows:(string|number)[][], highlightLastRow?:boolean }
+Each spec must have a \`type\` and the type-specific fields:
+
+- line: { type:"line", title?:string, subtitle?:string, data:[{x:string|number, y:number}], xLabel?:string, yLabel?:string, color?:string, series?:[{name:string, color?:string, data:[{x,y}]}], annotations?:[{x,y,label,color}] }
+- area: { type:"area", title?:string, subtitle?:string, data:[{x:string|number, y:number}], color?:string, annotations?:[{x,y,label,color}] }
+- bar: { type:"bar", title?:string, subtitle?:string, data:[{x:string, y:number, color?:string}], color?:string }
+- stackedBar: { type:"stackedBar", title?:string, subtitle?:string, data:[{x:string, "Series A":number, "Series B":number}], series:[{name:string, color?:string}] }
+- pie: { type:"pie", title?:string, subtitle?:string, data:[{name:string, value:number}], colors?:string[] }
+- donut: { type:"donut", title?:string, subtitle?:string, data:[{name:string, value:number}], colors?:string[], centerLabel?:string, centerValue?:string }
+- heatmap: { type:"heatmap", title?:string, subtitle?:string, rows:string[], cols:string[], values:number[][], colorMin?:string, colorMax?:string }
+- candlestick: { type:"candlestick", title?:string, subtitle?:string, data:[{date:string, open:number, high:number, low:number, close:number}] }
+- candlestick-enhanced: { type:"candlestick-enhanced", title?:string, subtitle?:string, data:[{date:string, open:number, high:number, low:number, close:number, volume?:number}], overlays?:[{name:string, color?:string, values:(number|null)[]}] }
+- scatter: { type:"scatter", title?:string, subtitle?:string, data:[{x:number, y:number, name?:string, size?:number, color?:string}], xLabel?:string, yLabel?:string, series?:[{name:string, color?:string, data:[{x,y,name?}]}] }
+- gauge: { type:"gauge", title?:string, subtitle?:string, value:number, min?:number, max?:number, label?:string, zones?:[{threshold:number, color:string}] }
+- treemap: { type:"treemap", title?:string, subtitle?:string, data:[{name:string, value:number, color?:string}] }
+- comparison-line: { type:"comparison-line", title?:string, subtitle?:string, series:[{name:string, color?:string, data:[{x,y}]}], xLabel?:string, yLabel?:string }
+- waterfall: { type:"waterfall", title?:string, subtitle?:string, data:[{label:string, value:number, isTotal?:boolean}], yLabel?:string }
+- table: { type:"table", title?:string, subtitle?:string, headers:string[], rows:(string|number)[][], highlightLastRow?:boolean }
+- gallery: { type:"gallery", title?:string, charts:[ChartSpec[]], columns?:1|2|3 }
 
 Always emit at least one chart if your analysis contains quantitative data. Numbers in the charts must match the numbers in your markdown analysis. Do not include any text after the last CHART_JSON comment.
 `;
@@ -208,7 +220,16 @@ List with risk score and one-sentence reasoning per pick.
 ## 🎯 Entry Zones & Stop-Loss Suggestions
 Table: Ticker | Entry Zone | Stop-Loss | Position Size %.
 
-Make every number realistic and internally consistent.`,
+Make every number realistic and internally consistent.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this screener module:
+1. A **bar** chart of the top 10 picks by market cap (x=Ticker, y=Market Cap in $B).
+2. A **gauge** chart for the overall portfolio risk rating (value=avg risk 0-100, label="Avg Risk").
+3. A **table** for the summary table (headers: ["#","Ticker","Company","Sector","P/E","Rev Growth","Div Yield","Risk","Moat"], rows = your 10 picks).
+4. A **stackedBar** chart showing the sector breakdown of the picks (x=Sector, series=Count by Risk tier Low/Med/High).
+5. A **scatter** chart of P/E vs Rev Growth (x=P/E, y=Rev Growth %, name=Ticker).`,
   },
   "ms-dcf": {
     persona: "Senior Equity Research Analyst, Morgan Stanley",
@@ -298,7 +319,15 @@ For each of the top 3 risks, suggest a concrete hedge (instrument + size + ratio
 ## ⚖️ Rebalancing Suggestions
 Table: Action | Ticker | From % | To % | Reason.
 
-Make all numbers realistic.`,
+Make all numbers realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this risk module:
+1. A **heatmap** chart for the correlation matrix (rows = holdings, cols = holdings, values = correlation coefficients -1.0 to 1.0, colorMin="#ef4444", colorMax="#10b981").
+2. A **treemap** chart for sector exposure (data = [{name:"Tech", value: weightPct}, ...]).
+3. A **bar** chart of stress drawdown % per holding (x=Ticker, y=Drawdown %).
+4. A **table** for the rebalancing suggestions (headers: ["Action","Ticker","From %","To %","Reason"]).`,
   },
   "jpm-earnings": {
     persona: "Senior Earnings Analyst, JPMorgan Chase",
@@ -340,7 +369,15 @@ Table: Date | Move % | Direction | Catalyst.
 ## 🐻 Bear Case + Downside Risk
 3-4 bullets + estimated -X% downside risk if bear case prints.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this earnings module:
+1. A **candlestick-enhanced** chart of post-earnings price reactions for the last 10 days (date/open/high/low/close/volume).
+2. A **bar** chart of beat/miss history over last 4 quarters (x=Quarter, y=EPS Surprise $, color=green for beat, red for miss).
+3. A **table** for the last 4 quarters actual vs estimate (headers: ["Quarter","EPS Est","EPS Actual","Beat/Miss","Rev Est","Rev Actual","Beat/Miss","Stock Reaction %"]).
+4. A **gauge** chart for the options-implied move vs historical realized move (value = implied move %, max=20, label="Implied Move").`,
   },
   "br-portfolio": {
     persona: "Senior Portfolio Strategist, BlackRock",
@@ -497,7 +534,15 @@ Bulleted summary specific to the chosen account type.
 ## 🏆 Ranked List (Safest → Most Aggressive)
 Final ranking callout.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this dividend module:
+1. A **bar** chart of dividend yield comparison for the top 10 picks (x=Ticker, y=Yield %).
+2. A **donut** chart for sector diversification (data=[{name:"Tech", value:count},...], centerLabel="Picks", centerValue=total).
+3. A **table** for the dividend stock picks (headers: ["#","Ticker","Company","Yield %","Safety","Growth Yrs","Payout Ratio"]).
+4. A **line** chart of DRIP reinvestment projection (x=Year, y=Portfolio Value $).`,
   },
   "bain-competitive": {
     persona: "Senior Strategy Consultant, Bain & Company",
@@ -540,7 +585,15 @@ Bold callout with 4-sentence rationale.
 ## ⚡ 12-Month Catalysts
 Bulleted list of catalysts that could move the winner.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this competitive analysis module:
+1. A **stackedBar** chart of revenue by segment across the top 3 competitors (x=Ticker, series=[Segment A, Segment B, Segment C]).
+2. A **scatter** chart of margin vs revenue growth (x=Revenue Growth %, y=Net Margin %, name=Ticker).
+3. A **table** for the top competitors (headers: ["#","Ticker","Company","Market Cap $B","Market Share %","3Y Share Trend"]).
+4. A **bar** chart of market share % per competitor (x=Ticker, y=Market Share %).`,
   },
   "ren-patterns": {
     persona: "Senior Quant Researcher, Renaissance Technologies",
@@ -586,7 +639,15 @@ Bulleted recent insider activity (officer/director, buy/sell, $ value, narrative
 ## 🎯 Statistical Edge Summary
 Bulleted list of the top 3 quantifiable edges with sample size and confidence interval.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this patterns module:
+1. A **heatmap** chart of seasonal monthly returns (rows=["Avg Return %","Hit Rate %"], cols=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], values=[[...12 numbers...],[...12 numbers...]]).
+2. An **area** chart of cumulative returns over the last 12 months (x=Month, y=Cumulative Return %).
+3. A **bar** chart of day-of-week performance (x=Weekday, y=Avg Return %, color=green/red).
+4. A **table** for macro event impact (headers: ["Event","Avg Move %","Direction Bias","Confidence"]).`,
   },
   "mck-macro": {
     persona: "Senior Macro Strategist, McKinsey & Company",
@@ -635,7 +696,15 @@ Table: Action | Ticker | Adjustment | Rationale.
 ## ⏰ Macro Timeline
 Table: Timeframe (1Q/2Q/2H) | Key Macro Event | Portfolio Impact.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this macro module:
+1. A **comparison-line** chart comparing sector performance over the last 12 months (series=[{name:"Tech", data:[...]}, {name:"Financials", data:[...]}, {name:"Energy", data:[...]}]).
+2. A **gauge** chart for the overall economic health indicator (value=GDP growth forecast * 20 + 50, label="Econ Health", zones=[{threshold:40, color:"#fb7185"},{threshold:60, color:"#facc15"},{threshold:100, color:"#34d399"}]).
+3. A **table** for USD strength impact (headers: ["Holding","FX Exposure","Impact","Magnitude"]).
+4. A **waterfall** chart showing GDP contribution by component (data=[{label:"Consumption", value:1.8}, {label:"Investment", value:0.6}, {label:"Govt", value:-0.2}, {label:"NetExports", value:-0.4}, {label:"GDP Growth", value:1.8, isTotal:true}]).`,
   },
 };
 
