@@ -52,3 +52,13 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# AI Investment Brain — local runtime artifacts (not for repo)
+/db/
+/download/
+/tool-results/
+/agent-ctx/
+/upload/
+worklog.md
+.zscripts/
+examples/
