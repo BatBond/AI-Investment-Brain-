@@ -349,7 +349,7 @@ node scripts/seed_portfolio.js     # Seed portfolio from upload/Portfolio_Positi
 
 The repo is pre-configured for Vercel with:
 - `vercel.json` — cron jobs for scheduled emails + sentiment scans
-- `scripts/select-schema.sh` — auto-detects SQLite (local) vs PostgreSQL (production)
+- `scripts/select-schema.js` — auto-detects SQLite (local) vs PostgreSQL (production)
 - `prisma/schema.sqlite.prisma` + `prisma/schema.postgres.prisma` — both schemas ready
 - `src/app/api/cron/*` — serverless cron endpoints (replace in-process scheduler)
 
@@ -383,8 +383,8 @@ The repo is pre-configured for Vercel with:
 
 5. **Deploy** — Vercel will:
    - Run `bun install`
-   - Run `postinstall` → `select-schema.sh` (switches to PostgreSQL schema, runs `prisma generate`)
-   - Run `vercel-build` → `select-schema.sh && next build`
+   - Run `postinstall` → `select-schema.js` (switches to PostgreSQL schema, runs `prisma generate`)
+   - Run `vercel-build` → `select-schema.js && next build`
    - Set up Cron Jobs from `vercel.json`
 
 6. **Push database schema** (one-time, after first deploy):
@@ -413,7 +413,7 @@ The repo is pre-configured for Vercel with:
 
 #### Vercel-specific notes:
 
-- **SQLite doesn't work on Vercel** — serverless functions don't persist local files. The `select-schema.sh` script auto-detects this and switches to PostgreSQL when `DATABASE_URL` starts with `postgres://` or `postgresql://`.
+- **SQLite doesn't work on Vercel** — serverless functions don't persist local files. The `select-schema.js` script auto-detects this and switches to PostgreSQL when `DATABASE_URL` starts with `postgres://` or `postgresql://`.
 - **`node-cron` doesn't work on serverless** — replaced by Vercel Cron Jobs (defined in `vercel.json`). The in-process scheduler (`src/lib/scheduler.ts`) is automatically disabled in production.
 - **Hobby tier = 1 cron job, daily max** — the `/api/cron/daily` endpoint consolidates everything (emails + sentiment) into one daily run. The granular endpoints (`/api/cron/scheduled-emails`, `/api/cron/sentiment-scan`) still exist for external schedulers.
 - **Long-running LLM calls** — Vercel Hobby plan has 60s function timeout. The `vercel.json` sets `maxDuration: 60` for analyst/personas/agent/email/sentiment/cron routes. Pro plan allows up to 300s.

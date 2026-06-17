@@ -1,4 +1,25 @@
-// Prisma schema — SQLite variant (local dev)
+/**
+ * Schema selector — picks SQLite or PostgreSQL Prisma schema based on DATABASE_URL.
+ *
+ * Why this exists: Prisma doesn't allow `provider = env("DB_PROVIDER")` in the schema.
+ * So we keep two schema files (sqlite / postgres) and copy the right one into place
+ * at build time based on the DATABASE_URL env var.
+ *
+ * Runs via: `node scripts/select-schema.js` (cross-platform, no bash required).
+ * Invoked from package.json's `postinstall` and `build` scripts.
+ */
+
+const fs = require("fs");
+const path = require("path");
+
+const projectDir = path.resolve(__dirname, "..");
+const schemaDir = path.join(projectDir, "prisma");
+const mainSchema = path.join(schemaDir, "schema.prisma");
+const sqliteSchema = path.join(schemaDir, "schema.sqlite.prisma");
+const postgresSchema = path.join(schemaDir, "schema.postgres.prisma");
+
+// Write the SQLite schema inline since we deleted the file
+const SQLITE_SCHEMA = `// Prisma schema — SQLite variant (local dev)
 generator client {
   provider = "prisma-client-js"
 }
@@ -121,3 +142,38 @@ model SentimentArticle {
   @@index([ticker, fetchedAt])
   @@index([source])
 }
+`;
+
+// Write the PostgreSQL schema inline
+const POSTGRES_SCHEMA = SQLITE_SCHEMA.replace(
+  'provider = "sqlite"',
+  'provider = "postgresql"'
+);
+
+const dbUrl = process.env.DATABASE_URL || "";
+
+if (!dbUrl) {
+  console.error("❌ DATABASE_URL is not set. Please set it in .env or Vercel dashboard.");
+  process.exit(1);
+}
+
+let provider;
+let schemaContent;
+
+// Detect: file:* or sqlite or localhost → sqlite; everything else → postgresql
+if (
+  dbUrl.startsWith("file:") ||
+  dbUrl.includes("sqlite") ||
+  dbUrl.includes("localhost")
+) {
+  provider = "sqlite";
+  schemaContent = SQLITE_SCHEMA;
+  console.log("📦 Detected SQLite (local dev) — using SQLite schema");
+} else {
+  provider = "postgresql";
+  schemaContent = POSTGRES_SCHEMA;
+  console.log("🐘 Detected PostgreSQL (production) — using PostgreSQL schema");
+}
+
+fs.writeFileSync(mainSchema, schemaContent);
+console.log(`✅ Wrote prisma/schema.prisma with provider="${provider}"`);
