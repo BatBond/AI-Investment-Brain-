@@ -38,12 +38,13 @@ const CAPABILITIES = [
   "Screen for momentum, value, or technical setups",
 ];
 
-export function AIAgent() {
+export function AIAgent({ initialTicker }: { initialTicker?: string } = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastInitialRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -51,6 +52,16 @@ export function AIAgent() {
       behavior: "smooth",
     });
   }, [messages, loading]);
+
+  // Auto-send a contextual prompt when a ticker is passed via navigation
+  // (e.g. "Analyze with AI Agent" from portfolio / sentiment radar).
+  useEffect(() => {
+    if (!initialTicker) return;
+    if (lastInitialRef.current === initialTicker) return;
+    lastInitialRef.current = initialTicker;
+    const prompt = `Analyze ${initialTicker} — give me technicals, fundamentals, recent news context, and a trade hypothesis with entry / stop / target.`;
+    void send(prompt);
+  }, [initialTicker]);
 
   async function send(text?: string) {
     const content = (text ?? input).trim();

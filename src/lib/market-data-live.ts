@@ -290,7 +290,9 @@ export async function getLiveQuote(symbol: string): Promise<LiveQuote | null> {
         symbol: q.symbol || sym,
         name: q.shortName || q.longName || sym,
         price: q.regularMarketPrice ?? 0,
-        changePct: (q.regularMarketChangePercent ?? 0) * 100,
+        // NOTE: yahoo-finance2 v3 returns regularMarketChangePercent already
+        // as a percentage (e.g., -2.26 for -2.26%). Do NOT multiply by 100.
+        changePct: q.regularMarketChangePercent ?? 0,
         changeAbs: q.regularMarketChange ?? 0,
         volume: q.regularMarketVolume ?? 0,
         marketCap: q.marketCap ?? 0,

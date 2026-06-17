@@ -24,6 +24,8 @@ import { HvDividend } from "@/components/sections/hv-dividend";
 import { BainCompetitive } from "@/components/sections/bain-competitive";
 import { RenPatterns } from "@/components/sections/ren-patterns";
 import { MckMacro } from "@/components/sections/mck-macro";
+import { Portfolio } from "@/components/sections/portfolio";
+import { SentimentRadar } from "@/components/sections/sentiment-radar";
 
 export default function Home() {
   const [active, setActive] = useState<SectionId>("dashboard");
@@ -112,7 +114,7 @@ export default function Home() {
               />
             )}
             {active === "personas" && <Personas initialTicker={tickerContext} />}
-            {active === "ai-agent" && <AIAgent />}
+            {active === "ai-agent" && <AIAgent initialTicker={tickerContext} />}
             {active === "morning-brief" && (
               <MorningBrief onNavigate={navigate} onSelectTicker={selectTicker} />
             )}
@@ -139,6 +141,12 @@ export default function Home() {
             )}
             {active === "knowledge-graph" && <KnowledgeGraph />}
             {active === "automation" && <Automation />}
+            {active === "portfolio" && (
+              <Portfolio onNavigate={navigate} onSelectTicker={selectTicker} />
+            )}
+            {active === "sentiment-radar" && (
+              <SentimentRadar onNavigate={navigate} />
+            )}
           </div>
         </main>
         <Footer />

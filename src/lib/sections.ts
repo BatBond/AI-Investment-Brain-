@@ -18,6 +18,7 @@ import {
   NotebookPen,
   Network,
   Send,
+  Wallet,
 } from "lucide-react";
 
 export type SectionId =
@@ -38,9 +39,16 @@ export type SectionId =
   | "mck-macro"
   | "notes-knowledge"
   | "knowledge-graph"
-  | "automation";
+  | "automation"
+  | "portfolio"
+  | "sentiment-radar";
 
-export type SectionGroup = "core" | "analyst" | "knowledge" | "automation";
+export type SectionGroup =
+  | "portfolio"
+  | "core"
+  | "analyst"
+  | "knowledge"
+  | "automation";
 
 export interface SectionDef {
   id: SectionId;
@@ -52,6 +60,9 @@ export interface SectionDef {
 }
 
 export const SECTIONS: SectionDef[] = [
+  // Portfolio & Markets (top of sidebar)
+  { id: "portfolio", label: "Portfolio", short: "PFLO", icon: Wallet, group: "portfolio" },
+  { id: "sentiment-radar", label: "Sentiment Radar", short: "RADR", icon: Radar, group: "portfolio" },
   // Core
   { id: "dashboard", label: "Dashboard", short: "DASH", icon: LayoutDashboard, group: "core" },
   { id: "ticker-search", label: "Ticker Search", short: "SRCH", icon: Search, group: "core" },
@@ -81,13 +92,20 @@ export const SECTION_MAP: Record<SectionId, SectionDef> = Object.fromEntries(
 ) as Record<SectionId, SectionDef>;
 
 export const GROUP_LABELS: Record<SectionGroup, string> = {
+  portfolio: "Portfolio & Markets",
   core: "Core",
   analyst: "Wall Street Analyst Modules",
   knowledge: "Knowledge & Notes",
   automation: "Automation",
 };
 
-export const GROUP_ORDER: SectionGroup[] = ["core", "analyst", "knowledge", "automation"];
+export const GROUP_ORDER: SectionGroup[] = [
+  "portfolio",
+  "core",
+  "analyst",
+  "knowledge",
+  "automation",
+];
 
 export const GROUPED_SECTIONS: { group: SectionGroup; label: string; items: SectionDef[] }[] =
   GROUP_ORDER.map((g) => ({

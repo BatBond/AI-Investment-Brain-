@@ -12,12 +12,18 @@ import cron from "node-cron";
 import { db } from "./db";
 import { sendEmail, isStubMode } from "./email";
 import { generateEmailBody } from "./email-research";
+import { scanSentiment } from "./sentiment-sources";
 
 const SCHEDULER_TICK_CRON = "* * * * *"; // every minute
+const SENTIMENT_MARKET_CRON = "*/30 * * * *"; // every 30 min — market-wide scan
+const SENTIMENT_HOLDINGS_CRON = "0 */2 * * *"; // every 2 hours — per-holding scan
 
 interface GlobalWithScheduler {
   __aibSchedulerStarted?: boolean;
   __aibSchedulerTask?: cron.ScheduledTask;
+  __aibSentimentMarketTask?: cron.ScheduledTask;
+  __aibSentimentHoldingsTask?: cron.ScheduledTask;
+  __aibLastSentimentScan?: number;
 }
 
 const g = globalThis as unknown as GlobalWithScheduler;
@@ -199,17 +205,90 @@ export function ensureSchedulerStarted() {
     void tick();
   });
   g.__aibSchedulerTask = task;
+
+  // Sentiment Radar — market-wide scan every 30 minutes
+  const sentimentTask = cron.schedule(SENTIMENT_MARKET_CRON, () => {
+    void runSentimentMarketScan();
+  });
+  g.__aibSentimentMarketTask = sentimentTask;
+
+  // Sentiment Radar — per-holding scan every 2 hours
+  const holdingsTask = cron.schedule(SENTIMENT_HOLDINGS_CRON, () => {
+    void runSentimentHoldingsScan();
+  });
+  g.__aibSentimentHoldingsTask = holdingsTask;
+
   console.log(
     `[scheduler] started (1-minute tick). SMTP mode: ${
       isStubMode() ? "STUB (file log)" : "LIVE"
-    }`
+    }. Sentiment radar: market scan every 30min, holdings every 2h.`
   );
+}
+
+async function runSentimentMarketScan() {
+  try {
+    const now = Date.now();
+    if (g.__aibLastSentimentScan && now - g.__aibLastSentimentScan < 25 * 60 * 1000) {
+      return; // debounce — don't double-run
+    }
+    g.__aibLastSentimentScan = now;
+    console.log("[scheduler] starting market-wide sentiment scan…");
+    const articles = await scanSentiment("MARKET");
+    console.log(
+      `[scheduler] market sentiment scan complete: ${articles.length} articles processed`
+    );
+  } catch (e) {
+    console.error(
+      "[scheduler] market sentiment scan failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+}
+
+async function runSentimentHoldingsScan() {
+  try {
+    const positions = await db.portfolioPosition.findMany({ select: { symbol: true } });
+    if (positions.length === 0) return;
+    console.log(
+      `[scheduler] starting per-holding sentiment scan for ${positions.length} positions…`
+    );
+    // Process sequentially with a small delay to avoid hammering the LLM
+    let processed = 0;
+    for (const p of positions) {
+      try {
+        await scanSentiment(p.symbol);
+        processed += 1;
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch (e) {
+        console.error(
+          `[scheduler] sentiment scan failed for ${p.symbol}:`,
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    }
+    console.log(
+      `[scheduler] per-holding sentiment scan complete: ${processed}/${positions.length} done`
+    );
+  } catch (e) {
+    console.error(
+      "[scheduler] per-holding sentiment scan failed:",
+      e instanceof Error ? e.message : String(e)
+    );
+  }
 }
 
 export function stopScheduler() {
   if (g.__aibSchedulerTask) {
     g.__aibSchedulerTask.stop();
     g.__aibSchedulerTask = undefined;
+  }
+  if (g.__aibSentimentMarketTask) {
+    g.__aibSentimentMarketTask.stop();
+    g.__aibSentimentMarketTask = undefined;
+  }
+  if (g.__aibSentimentHoldingsTask) {
+    g.__aibSentimentHoldingsTask.stop();
+    g.__aibSentimentHoldingsTask = undefined;
   }
   g.__aibSchedulerStarted = false;
 }

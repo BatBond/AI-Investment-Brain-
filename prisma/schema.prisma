@@ -84,3 +84,48 @@ model EmailLog {
   @@index([sentAt])
   @@index([scheduledEmailId])
 }
+
+// ============================================================================
+// AI Investment Brain — Portfolio & Watchlist
+// ============================================================================
+
+model PortfolioPosition {
+  id              String   @id @default(cuid())
+  symbol          String   @unique
+  description     String
+  quantity        Float
+  avgCostBasis    Float
+  costBasisTotal  Float
+  type            String   @default("Cash") // Cash | Margin | Short | Option
+  source          String   @default("manual") // manual | imported
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([symbol])
+}
+
+model WatchlistItem {
+  id              String   @id @default(cuid())
+  symbol          String   @unique
+  name            String?
+  notes           String?
+  addedAt         DateTime @default(now())
+
+  @@index([symbol])
+}
+
+model SentimentArticle {
+  id              String   @id @default(cuid())
+  ticker          String   // ticker OR "MARKET" for general market news
+  source          String   // yahoo | reddit | google | twitter | rss
+  title           String
+  url             String   @unique
+  summary         String?
+  sentiment       String   @default("neutral") // bullish | bearish | neutral
+  sentimentScore  Float    @default(0)         // -1.0 to 1.0
+  publishedAt     DateTime?
+  fetchedAt       DateTime @default(now())
+
+  @@index([ticker, fetchedAt])
+  @@index([source])
+}

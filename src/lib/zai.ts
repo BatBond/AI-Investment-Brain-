@@ -17,8 +17,9 @@ export async function getZai() {
 
 /**
  * Run a single chat completion against the ZAI SDK.
- * Retries once on 429 (rate limit) with a 2.5s backoff so the 5-persona
- * flow degrades gracefully instead of surfacing transient throttling errors.
+ * Retries up to 3 times on 429 (rate limit) with exponential backoff
+ * (2.5s, 4s, 6s) so the 5-persona flow and sentiment scans degrade
+ * gracefully instead of surfacing transient throttling errors.
  */
 export async function runChat(
   messages: ChatMessage[],
@@ -31,18 +32,24 @@ export async function runChat(
     ...(opts?.temperature !== undefined ? { temperature: opts.temperature } : {}),
     ...(opts?.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
   };
-  try {
-    const completion = await zai.chat.completions.create(body);
-    return completion.choices[0]?.message?.content ?? "";
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("429") || msg.toLowerCase().includes("too many requests")) {
-      await new Promise((r) => setTimeout(r, 2500));
+  const backoffs = [2500, 4000, 6000];
+  for (let attempt = 0; attempt <= backoffs.length; attempt++) {
+    try {
       const completion = await zai.chat.completions.create(body);
       return completion.choices[0]?.message?.content ?? "";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const is429 =
+        msg.includes("429") || msg.toLowerCase().includes("too many requests");
+      if (is429 && attempt < backoffs.length) {
+        await new Promise((r) => setTimeout(r, backoffs[attempt]));
+        continue;
+      }
+      throw err;
     }
-    throw err;
   }
+  // Unreachable
+  throw new Error("runChat: exhausted retries");
 }
 
 /**
