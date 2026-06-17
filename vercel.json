@@ -5,12 +5,8 @@
   "installCommand": "bun install",
   "crons": [
     {
-      "path": "/api/cron/scheduled-emails",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/sentiment-scan",
-      "schedule": "0,30 * * * *"
+      "path": "/api/cron/daily",
+      "schedule": "0 13 * * *"
     }
   ],
   "functions": {
@@ -18,6 +14,7 @@
     "src/app/api/personas/route.ts": { "maxDuration": 60 },
     "src/app/api/agent/chat/route.ts": { "maxDuration": 60 },
     "src/app/api/email/send-now/route.ts": { "maxDuration": 60 },
-    "src/app/api/sentiment/scan/route.ts": { "maxDuration": 60 }
+    "src/app/api/sentiment/scan/route.ts": { "maxDuration": 60 },
+    "src/app/api/cron/daily/route.ts": { "maxDuration": 60 }
   }
 }

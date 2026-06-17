@@ -404,15 +404,19 @@ The repo is pre-configured for Vercel with:
    ```
 
 8. **Verify cron jobs** (Vercel dashboard → your project → Cron tab):
-   - `/api/cron/scheduled-emails` — runs every minute
-   - `/api/cron/sentiment-scan` — runs every 30 min
-   - Both require `CRON_SECRET` env var for security
+   - `/api/cron/daily` — runs once per day at 1 PM UTC (8 AM ET)
+   - This single endpoint handles: scheduled emails + market sentiment scan + portfolio ticker rotation
+   - Requires `CRON_SECRET` env var for security
+   - **Hobby tier limit**: Vercel free plan allows only 1 cron job, daily maximum. To run more frequently (e.g., every minute for emails, every 30 min for sentiment), either:
+     - **Upgrade to Vercel Pro** ($20/mo) — unlimited cron jobs
+     - **Use an external scheduler** (free) like [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org) to ping `/api/cron/scheduled-emails` and `/api/cron/sentiment-scan` at whatever frequency you want. Both endpoints accept `Authorization: Bearer <CRON_SECRET>` header.
 
 #### Vercel-specific notes:
 
 - **SQLite doesn't work on Vercel** — serverless functions don't persist local files. The `select-schema.sh` script auto-detects this and switches to PostgreSQL when `DATABASE_URL` starts with `postgres://` or `postgresql://`.
 - **`node-cron` doesn't work on serverless** — replaced by Vercel Cron Jobs (defined in `vercel.json`). The in-process scheduler (`src/lib/scheduler.ts`) is automatically disabled in production.
-- **Long-running LLM calls** — Vercel Hobby plan has 60s function timeout. The `vercel.json` sets `maxDuration: 60` for analyst/personas/agent/email/sentiment routes. Pro plan allows up to 300s.
+- **Hobby tier = 1 cron job, daily max** — the `/api/cron/daily` endpoint consolidates everything (emails + sentiment) into one daily run. The granular endpoints (`/api/cron/scheduled-emails`, `/api/cron/sentiment-scan`) still exist for external schedulers.
+- **Long-running LLM calls** — Vercel Hobby plan has 60s function timeout. The `vercel.json` sets `maxDuration: 60` for analyst/personas/agent/email/sentiment/cron routes. Pro plan allows up to 300s.
 - **WebSocket mini-service** — not deployed to Vercel (no persistent processes). The app uses HTTP polling + client-side interpolation instead, which works great on serverless.
 
 ### Self-hosted (Docker / VPS)
