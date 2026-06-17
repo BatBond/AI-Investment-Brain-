@@ -327,6 +327,137 @@ RIGHT_BRANCHES = [
             },
         ],
     },
+    {
+        "label": "10 Wall Street Analyst Modules",
+        "color": "indigo",
+        "status": "done",
+        "children": [
+            {
+                "label": "Goldman Sachs — Stock Screener",
+                "status": "done",
+                "children": [
+                    ("Top 10 Picks + Summary Table", "done"),
+                    ("P/E vs Sector Analysis", "done"),
+                    ("5Y Revenue Growth Trends", "done"),
+                    ("D/E Health Check", "done"),
+                    ("Dividend Sustainability Score", "done"),
+                    ("Competitive Moat Rating", "done"),
+                    ("Bull / Bear 12M Price Targets", "done"),
+                    ("Risk Rating (1-10)", "done"),
+                    ("Entry Zones + Stop-Loss", "done"),
+                ],
+            },
+            {
+                "label": "Morgan Stanley — DCF Deep Dive",
+                "status": "done",
+                "children": [
+                    ("5Y Revenue Projection", "done"),
+                    ("Operating Margin Estimates", "done"),
+                    ("Year-by-Year FCF", "done"),
+                    ("WACC Component Breakdown", "done"),
+                    ("Terminal Value (Exit + Perpetuity)", "done"),
+                    ("Sensitivity Grid", "done"),
+                    ("Verdict: Under/Fair/Over", "done"),
+                ],
+            },
+            {
+                "label": "Bridgewater — Risk Analysis",
+                "status": "done",
+                "children": [
+                    ("Correlation Matrix", "done"),
+                    ("Sector Concentration", "done"),
+                    ("Recession Stress Test", "done"),
+                    ("Tail Risk Scenarios", "done"),
+                    ("Top 3 Hedging Strategies", "done"),
+                    ("Rebalancing Suggestions", "done"),
+                ],
+            },
+            {
+                "label": "JPMorgan — Earnings Breakdown",
+                "status": "done",
+                "children": [
+                    ("4Q Beat/Miss History", "done"),
+                    ("Consensus Estimates", "done"),
+                    ("Segment Revenue Breakdown", "done"),
+                    ("Options Implied Move", "done"),
+                    ("Post-Earnings Reactions", "done"),
+                    ("Buy Before / Sell / Wait Verdict", "done"),
+                ],
+            },
+            {
+                "label": "BlackRock — Portfolio Construction",
+                "status": "done",
+                "children": [
+                    ("Asset Allocation Pie", "done"),
+                    ("Core vs Satellite Picks", "done"),
+                    ("Expected Return Range", "done"),
+                    ("Max Drawdown Estimate", "done"),
+                    ("DCA Plan + Benchmark", "done"),
+                    ("Investment Policy Statement", "done"),
+                ],
+            },
+            {
+                "label": "Citadel — Technical Analysis",
+                "status": "done",
+                "children": [
+                    ("Multi-Timeframe Trend", "done"),
+                    ("Support / Resistance Levels", "done"),
+                    ("RSI / MACD / BB Interpretation", "done"),
+                    ("Chart Pattern ID", "done"),
+                    ("Fibonacci Retracement", "done"),
+                    ("Entry / Stop / Target + R:R", "done"),
+                    ("Confidence Rating", "done"),
+                ],
+            },
+            {
+                "label": "Harvard Endowment — Dividend Strategy",
+                "status": "done",
+                "children": [
+                    ("15-20 Dividend Picks", "done"),
+                    ("Safety Score (1-10)", "done"),
+                    ("Payout Ratio Analysis", "done"),
+                    ("Monthly Income Projection", "done"),
+                    ("DRIP 10Y Compounding", "done"),
+                    ("Safest-to-Aggressive Ranking", "done"),
+                ],
+            },
+            {
+                "label": "Bain — Competitive Advantage",
+                "status": "done",
+                "children": [
+                    ("Top 5-7 Competitors Table", "done"),
+                    ("Moat Analysis (Brand/Cost/Network)", "done"),
+                    ("Market Share Trends", "done"),
+                    ("SWOT for Top 2", "done"),
+                    ("Best Pick + Catalysts", "done"),
+                ],
+            },
+            {
+                "label": "Renaissance — Pattern Finder",
+                "status": "done",
+                "children": [
+                    ("Seasonal Patterns", "done"),
+                    ("Insider Buying/Selling", "done"),
+                    ("Institutional Ownership Trend", "done"),
+                    ("Short Interest + Squeeze", "done"),
+                    ("Unusual Options Activity", "done"),
+                    ("Statistical Edge Summary", "done"),
+                ],
+            },
+            {
+                "label": "McKinsey — Macro Impact",
+                "status": "done",
+                "children": [
+                    ("USD Strength Impact", "done"),
+                    ("Rate Environment: Growth vs Value", "done"),
+                    ("Inflation Sector Winners/Losers", "done"),
+                    ("Fed Policy Outlook", "done"),
+                    ("Sector Rotation Rec", "done"),
+                    ("Macro Action Plan", "done"),
+                ],
+            },
+        ],
+    },
 ]
 
 # ============================================================================
@@ -348,6 +479,7 @@ COLOR_META = {
     "green":   {"border": "#34D399", "text": "#6EE7B7", "bg": "#065F46", "sub_border": "#047857", "sub_bg": "#022C22", "sub_text": "#6EE7B7"},
     "violet":  {"border": "#A78BFA", "text": "#C4B5FD", "bg": "#5B21B6", "sub_border": "#6D28D9", "sub_bg": "#2E1065", "sub_text": "#C4B5FD"},
     "teal":    {"border": "#2DD4BF", "text": "#5EEAD4", "bg": "#115E59", "sub_border": "#0F766E", "sub_bg": "#042F2E", "sub_text": "#5EEAD4"},
+    "indigo":  {"border": "#818CF8", "text": "#A5B4FC", "bg": "#3730A3", "sub_border": "#4338CA", "sub_bg": "#1E1B4B", "sub_text": "#A5B4FC"},
 }
 
 # ============================================================================
@@ -610,7 +742,7 @@ def build_html() -> str:
 
 <div class="page-header">
   <h1>AI Investment Brain — <span class="accent">Knowledge Graph</span></h1>
-  <div class="subtitle">Complete application & AI agent map · 7 capability clusters · 100+ components · progress-tracked</div>
+  <div class="subtitle">Complete application & AI agent map · 8 capability clusters · 200+ components · 10 Wall Street analyst modules · progress-tracked</div>
 </div>
 
 <div class="legend">
