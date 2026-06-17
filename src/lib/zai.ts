@@ -6,12 +6,41 @@ export interface ChatMessage {
   content: string;
 }
 
-let _zai: Awaited<ReturnType<typeof ZAI.create>> | null = null;
+let _zai: ZAI | null = null;
 
-export async function getZai() {
-  if (!_zai) {
-    _zai = await ZAI.create();
+/**
+ * Initialize the ZAI SDK client.
+ *
+ * The SDK's default `ZAI.create()` reads from a `.z-ai-config` file which
+ * doesn't exist on Vercel/serverless. We bypass it by instantiating `new ZAI(config)`
+ * directly with values from env vars.
+ *
+ * Required env vars (set in Vercel dashboard):
+ *   ZAI_API_KEY  — your Z.ai API key
+ *   ZAI_BASE_URL — defaults to https://api.z.ai/api/v1
+ *
+ * If env vars aren't set, falls back to ZAI.create() which searches for
+ * .z-ai-config in the project root, home dir, or /etc/ (works in Z.ai sandbox).
+ */
+export async function getZai(): Promise<ZAI> {
+  if (_zai) return _zai;
+
+  const apiKey = process.env.ZAI_API_KEY;
+  const baseUrl = process.env.ZAI_BASE_URL || "https://api.z.ai/api/v1";
+
+  if (apiKey && baseUrl) {
+    // Production path — use env vars directly (no config file needed)
+    _zai = new ZAI({
+      baseUrl,
+      apiKey,
+      chatId: process.env.ZAI_CHAT_ID,
+      userId: process.env.ZAI_USER_ID,
+    });
+    return _zai;
   }
+
+  // Dev/local path — fall back to ZAI.create() which reads .z-ai-config
+  _zai = await ZAI.create();
   return _zai;
 }
 

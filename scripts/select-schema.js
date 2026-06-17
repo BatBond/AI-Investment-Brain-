@@ -152,12 +152,20 @@ const POSTGRES_SCHEMA = SQLITE_SCHEMA.replace(
 
 const dbUrl = process.env.DATABASE_URL || "";
 
-// Fallback to SQLite if DATABASE_URL is not set.
-// This happens during `postinstall` on Vercel Hobby tier where env vars
-// aren't available yet. SQLite is safe because prisma generate doesn't
-// actually connect to the DB — it just generates client code.
-// The real provider is selected during the `build` step (which DOES have
-// env vars), overwriting this fallback.
+// On Vercel, ALWAYS use PostgreSQL (SQLite doesn't work on serverless).
+// Vercel sets process.env.VERCEL=1 and process.env.CI=1 during builds.
+// This check happens BEFORE the DATABASE_URL check because Vercel's
+// postinstall step may not have DATABASE_URL available yet, but VERCEL is set.
+if (process.env.VERCEL === "1" || process.env.CI === "1") {
+  console.log("🚀 Detected Vercel/CI environment — forcing PostgreSQL schema");
+  fs.writeFileSync(mainSchema, POSTGRES_SCHEMA);
+  console.log('✅ Wrote prisma/schema.prisma with provider="postgresql" (Vercel/CI override)');
+  process.exit(0);
+}
+
+// Fallback to SQLite if DATABASE_URL is not set (local dev without .env).
+// This is safe because prisma generate doesn't connect to the DB — it just
+// generates client code based on the schema.
 if (!dbUrl) {
   console.log("⚠️  DATABASE_URL not set — defaulting to SQLite for prisma generate");
   console.log("    (The build step will re-run this script with the real DATABASE_URL)");

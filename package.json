@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "node scripts/select-schema.js && prisma generate && next build",
-    "postinstall": "node scripts/select-schema.js && prisma generate",
+    "postinstall": "node scripts/select-schema.js || true",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "node scripts/select-schema.js && prisma db push",
