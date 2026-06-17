@@ -432,31 +432,47 @@ export function getTechnicalIndicators(symbol: string): TechnicalIndicators {
 export function formatCurrency(n: number, opts?: { compact?: boolean }): string {
   if (!isFinite(n)) return "—";
   if (opts?.compact) {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: 2,
-    }).format(n);
+    return "$" + formatCompactNum(n);
   }
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(n);
+  // Standard formatting — round to 2 decimals, add thousands separators
+  return "$" + formatFixedWithCommas(n, 2);
 }
 
 export function formatNumber(n: number, opts?: { compact?: boolean; digits?: number }): string {
   if (!isFinite(n)) return "—";
   if (opts?.compact) {
-    return new Intl.NumberFormat("en-US", {
-      notation: "compact",
-      maximumFractionDigits: 2,
-    }).format(n);
+    return formatCompactNum(n);
   }
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: opts?.digits ?? 2,
-  }).format(n);
+  return formatFixedWithCommas(n, opts?.digits ?? 2);
+}
+
+/**
+ * Deterministic compact number formatter — same output on server and client.
+ * Replaces Intl.NumberFormat({ notation: "compact" }) which can differ
+ * between Node ICU and browser ICU (e.g. $3.4T vs $3.40T).
+ *
+ * Examples: 3_400_000_000_000 → "3.40T", 1_234_000_000 → "1.23B",
+ *           12_345_000 → "12.35M", 123_400 → "123.40K", 999 → "999"
+ */
+function formatCompactNum(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e12) return sign + (abs / 1e12).toFixed(2) + "T";
+  if (abs >= 1e9)  return sign + (abs / 1e9).toFixed(2)  + "B";
+  if (abs >= 1e6)  return sign + (abs / 1e6).toFixed(2)  + "M";
+  if (abs >= 1e3)  return sign + (abs / 1e3).toFixed(2)  + "K";
+  return sign + abs.toFixed(0);
+}
+
+/**
+ * Deterministic number-with-commas formatter.
+ * toLocaleString() can produce different results on server vs client.
+ */
+function formatFixedWithCommas(n: number, digits: number): string {
+  const fixed = n.toFixed(digits);
+  const [intPart, decPart] = fixed.split(".");
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return decPart ? `${withCommas}.${decPart}` : withCommas;
 }
 
 export function formatPct(n: number, digits = 2): string {
