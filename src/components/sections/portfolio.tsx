@@ -1433,7 +1433,58 @@ export function Portfolio({ onNavigate, onSelectTicker }: PortfolioProps) {
         </Card>
       )}
 
-      {data && (
+      {!loading && !data && (
+        <Card className="border-amber-700/50 bg-amber-950/20">
+          <CardContent className="p-8">
+            <div className="flex items-start gap-3">
+              <Wallet className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-amber-200 font-semibold mb-1">
+                  No portfolio data available
+                </h3>
+                <p className="text-sm text-slate-300 mb-3">
+                  {portfolioStream.error
+                    ? `API error: ${portfolioStream.error}`
+                    : "Your portfolio is empty or the database isn't connected."}
+                </p>
+                <div className="text-xs text-slate-400 space-y-2">
+                  <p className="font-semibold text-slate-300">To fix this:</p>
+                  <ol className="list-decimal list-inside space-y-1 ml-2">
+                    <li>
+                      Make sure <code className="px-1 py-0.5 bg-slate-800 rounded text-amber-300">DATABASE_URL</code> is set in
+                      Vercel env vars (PostgreSQL connection string)
+                    </li>
+                    <li>
+                      Push the schema: <code className="px-1 py-0.5 bg-slate-800 rounded text-amber-300">DATABASE_URL="..." bun run db:push</code>
+                    </li>
+                    <li>
+                      Seed your portfolio: <code className="px-1 py-0.5 bg-slate-800 rounded text-amber-300">DATABASE_URL="..." node scripts/seed-portfolio-prod.js</code>
+                    </li>
+                  </ol>
+                  <p className="mt-3 text-slate-500">
+                    Or click <strong className="text-slate-300">Add Position</strong> above to manually add holdings.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {data && data.positions.length === 0 && (
+        <Card className="border-slate-700 bg-slate-800/40">
+          <CardContent className="p-8 text-center">
+            <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-3" />
+            <p className="text-sm text-slate-300 mb-1">Your portfolio is empty.</p>
+            <p className="text-xs text-slate-500">
+              Click <strong className="text-amber-300">Add Position</strong> above to start tracking holdings,
+              or use <strong className="text-amber-300">Import</strong> to upload an xlsx.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {data && data.positions.length > 0 && (
         <>
           <SummaryStrip data={data} />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
