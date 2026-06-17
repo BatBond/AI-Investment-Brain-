@@ -319,12 +319,14 @@ export function SentimentRadar({ onNavigate }: SentimentRadarProps) {
           label="Market Sentiment"
           value={overview?.marketSentiment || "—"}
           sub={
-            overview
+            overview && typeof overview.marketScore === "number"
               ? `Score ${overview.marketScore >= 0 ? "+" : ""}${overview.marketScore.toFixed(2)}`
-              : ""
+              : overview?.error
+                ? "DB error"
+                : ""
           }
           tone={
-            !overview
+            !overview || typeof overview.marketScore !== "number"
               ? "neutral"
               : overview.marketScore > 0.1
                 ? "up"
@@ -338,7 +340,7 @@ export function SentimentRadar({ onNavigate }: SentimentRadarProps) {
           label="Top Bullish"
           value={overview?.topBullish?.ticker || "—"}
           sub={
-            overview?.topBullish
+            overview?.topBullish && typeof overview.topBullish.avgScore === "number"
               ? `+${overview.topBullish.avgScore.toFixed(2)} (${overview.topBullish.count} arts)`
               : ""
           }
@@ -349,7 +351,7 @@ export function SentimentRadar({ onNavigate }: SentimentRadarProps) {
           label="Top Bearish"
           value={overview?.topBearish?.ticker || "—"}
           sub={
-            overview?.topBearish
+            overview?.topBearish && typeof overview.topBearish.avgScore === "number"
               ? `${overview.topBearish.avgScore.toFixed(2)} (${overview.topBearish.count} arts)`
               : ""
           }
@@ -358,10 +360,10 @@ export function SentimentRadar({ onNavigate }: SentimentRadarProps) {
         />
         <OverviewCard
           label="Articles (24h)"
-          value={overview ? String(overview.total) : "—"}
+          value={overview && typeof overview.total === "number" ? String(overview.total) : "—"}
           sub={
-            overview
-              ? `${overview.bullish}↑ / ${overview.bearish}↓ / ${overview.neutral}=`
+            overview && typeof overview.total === "number"
+              ? `${overview.bullish || 0}↑ / ${overview.bearish || 0}↓ / ${overview.neutral || 0}=`
               : ""
           }
           tone="neutral"
@@ -522,8 +524,8 @@ export function SentimentRadar({ onNavigate }: SentimentRadarProps) {
                                 )}
                               >
                                 <SentIcon className="h-2.5 w-2.5" />
-                                {sm.label} {a.sentimentScore >= 0 ? "+" : ""}
-                                {a.sentimentScore.toFixed(2)}
+                                {sm.label} {typeof a.sentimentScore === "number" && a.sentimentScore >= 0 ? "+" : ""}
+                                {typeof a.sentimentScore === "number" ? a.sentimentScore.toFixed(2) : "—"}
                               </Badge>
                               {a.ticker && a.ticker !== "MARKET" && (
                                 <Badge
@@ -639,7 +641,7 @@ export function SentimentRadar({ onNavigate }: SentimentRadarProps) {
                           )}
                         >
                           {up ? "+" : ""}
-                          {t.avgScore.toFixed(2)}
+                          {typeof t.avgScore === "number" ? t.avgScore.toFixed(2) : "—"}
                         </span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-[9px] text-slate-500">
