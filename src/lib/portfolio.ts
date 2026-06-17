@@ -98,6 +98,13 @@ export async function computePortfolioStream(): Promise<PortfolioStreamResponse>
     return streamCache.data;
   }
 
+  // Check if db is available (may be null if Prisma failed to init)
+  if (!db) {
+    throw new Error(
+      "Database not initialized. Check that DATABASE_URL is set and the database is reachable."
+    );
+  }
+
   const positions = await db.portfolioPosition.findMany({
     orderBy: { costBasisTotal: "desc" },
   });
@@ -229,6 +236,9 @@ export async function computeWatchlistStream(): Promise<WatchlistStreamResponse>
   if (watchCache && Date.now() < watchCache.expires) {
     return watchCache.data;
   }
+  if (!db) {
+    throw new Error("Database not initialized. Check DATABASE_URL.");
+  }
   const items = await db.watchlistItem.findMany({ orderBy: { addedAt: "asc" } });
   if (items.length === 0) {
     const empty: WatchlistStreamResponse = { items: [], timestamp: Date.now() };
@@ -279,6 +289,9 @@ export async function getSectorAllocation(): Promise<AllocationResponse> {
   const cached = sectorCache.get("default");
   if (cached && Date.now() < cached.expires) return cached.data;
 
+  if (!db) {
+    throw new Error("Database not initialized. Check DATABASE_URL.");
+  }
   const positions = await db.portfolioPosition.findMany();
   if (positions.length === 0) {
     const empty: AllocationResponse = {

@@ -105,7 +105,17 @@ export function usePortfolioStream(): PortfolioStreamState {
     async function poll() {
       try {
         const res = await fetch("/api/portfolio/stream", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          // Extract the actual error message from the response body
+          let errMsg = `HTTP ${res.status}`;
+          try {
+            const body = await res.json();
+            if (body?.error) errMsg = `${res.status}: ${body.error}`;
+          } catch {
+            // Response wasn't JSON, stick with HTTP status
+          }
+          throw new Error(errMsg);
+        }
         const update = (await res.json()) as PortfolioStreamResponse;
         if (!active) return;
         // Track real price changes for flash effect
