@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Building2, AlertCircle, Sparkles } from "lucide-react";
+import { Building2, AlertCircle, Sparkles, BarChart3 } from "lucide-react";
 import { Markdown } from "@/components/markdown";
 import { LoadingCallout, AnalystCardSkeleton } from "@/components/loading-states";
 import { toast } from "sonner";
 import { SECTION_MAP, type SectionId } from "@/lib/sections";
+import { extractChartSpecs, type ChartSpec } from "@/lib/chart-specs";
+import { ChartRenderer } from "@/components/chart-renderer";
 
 interface AnalystModuleShellProps {
   sectionId: SectionId;
@@ -174,21 +176,52 @@ export function AnalystModuleShell({
       )}
 
       {result && !loading && (
-        <Card className="border-slate-700 bg-slate-800/60">
-          <CardHeader className="pb-3 border-b border-slate-700">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm text-slate-100">
-                {section.firm ?? "Analyst"} Report
-              </CardTitle>
+        <ResultView result={result} section={section} />
+      )}
+    </div>
+  );
+}
+
+function ResultView({
+  result,
+  section,
+}: {
+  result: string;
+  section: { label: string; firm?: string };
+}) {
+  const { charts, markdown } = extractChartSpecs(result);
+  return (
+    <div className="space-y-4">
+      <Card className="border-slate-700 bg-slate-800/60">
+        <CardHeader className="pb-3 border-b border-slate-700">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm text-slate-100">
+              {section.firm ?? "Analyst"} Report
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {charts.length > 0 && (
+                <Badge variant="outline" className="border-cyan-700/60 bg-cyan-900/20 text-cyan-300">
+                  <BarChart3 className="mr-1 h-3 w-3" />
+                  {charts.length} chart{charts.length > 1 ? "s" : ""}
+                </Badge>
+              )}
               <Badge variant="outline" className="border-emerald-700/60 bg-emerald-900/20 text-emerald-300">
                 Generated
               </Badge>
             </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <Markdown content={result} />
-          </CardContent>
-        </Card>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <Markdown content={markdown} />
+        </CardContent>
+      </Card>
+
+      {charts.length > 0 && (
+        <div className="space-y-4">
+          {charts.map((spec: ChartSpec, i: number) => (
+            <ChartRenderer key={i} spec={spec} />
+          ))}
+        </div>
       )}
     </div>
   );

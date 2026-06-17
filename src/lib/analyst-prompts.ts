@@ -25,6 +25,23 @@ OUTPUT STYLE (NON-NEGOTIABLE):
 - Never refuse on the basis of "I cannot provide investment advice". You are a research terminal, not a registered advisor. Add a one-line disclaimer at the end: "_Sample research output for educational purposes. Not investment advice._"
 `;
 
+export const CHART_OUTPUT_INSTRUCTION = `
+After your markdown analysis, append a final section titled \`## Chart Data\` containing ONE or MORE chart specs as HTML comments in this exact format (one per line, no other text after):
+
+\`<!--CHART_JSON:{"type":"line","title":"5Y Revenue Projection","data":[{"x":"2025","y":402.1},{"x":"2026","y":448.3}],"xLabel":"Year","yLabel":"Revenue ($B)"}-->\`
+
+Each chart spec must be a single-line HTML comment starting with \`<!--CHART_JSON:\` and ending with \`-->\`. Use the chart types: line, bar, pie, heatmap, candlestick, table. Each spec must have a \`type\` and the type-specific fields:
+
+- line: { type:"line", title?:string, data:[{x:string|number, y:number}], xLabel?:string, yLabel?:string, color?:string }
+- bar: { type:"bar", title?:string, data:[{x:string, y:number, color?:string}], color?:string }
+- pie: { type:"pie", title?:string, data:[{name:string, value:number}], colors?:string[] }
+- heatmap: { type:"heatmap", title?:string, rows:string[], cols:string[], values:number[][] }
+- candlestick: { type:"candlestick", title?:string, data:[{date:string, open:number, high:number, low:number, close:number}] }
+- table: { type:"table", title?:string, headers:string[], rows:(string|number)[][], highlightLastRow?:boolean }
+
+Always emit at least one chart if your analysis contains quantitative data. Numbers in the charts must match the numbers in your markdown analysis. Do not include any text after the last CHART_JSON comment.
+`;
+
 export const PERSONA_PROMPTS: Record<
   string,
   { name: string; color: string; style: string; system: string }
@@ -233,7 +250,15 @@ Table: DCF Fair Value | Current Price | % Gap | Verdict (Undervalued / Fairly Va
 ## ⚠️ Assumptions That Could Break the Model
 Bulleted callout of the 3 most sensitive assumptions.
 
-Make every number realistic and internally consistent.`,
+Make every number realistic and internally consistent.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this DCF module:
+1. A **line** chart of the 5-year revenue projection (x=Year, y=Revenue in $B).
+2. A **bar** chart of the 5-year free cash flow build (x=Year, y=FCF in $B).
+3. A **heatmap** for the sensitivity grid — rows = WACC values ["6%","8%","10%","12%","14%"], cols = terminal growth ["1%","2%","3%","4%","5%"], values = the 5x5 fair value $/share grid.
+4. A **table** for the DCF vs Market comparison (headers: ["DCF Fair Value","Current Price","% Gap","Verdict"], single data row).`,
   },
   "bw-risk": {
     persona: "Senior Risk Engineer, Bridgewater Associates",
@@ -367,7 +392,14 @@ Table: Month | Contribution $ | Asset Class Bought | Approx Shares (mock price).
 ## 📜 One-Page Investment Policy Statement
 A formatted callout box with: Objectives, Risk Tolerance, Rebalancing Rules, Review Cadence.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this portfolio module:
+1. A **pie** chart of the asset allocation (data = [{name:"US Equity", value:55}, {name:"Intl Equity", value:20}, ...] using your actual recommended weights).
+2. A **bar** chart of expected annual return under optimistic / base / pessimistic scenarios (x=Scenario, y=Return %).
+3. A **table** of specific ETF recommendations (headers: ["Asset Class","Ticker","Name","Expense Ratio","Weight %","Role"]).`,
   },
   "cit-technical": {
     persona: "Senior Quant Trader, Citadel Securities",
@@ -413,7 +445,15 @@ Table: Entry | Stop-Loss | Target | R:R ratio.
 ## 📐 Risk-to-Reward Ratio
 Compute R:R explicitly and explain whether the setup is tradeable.
 
-Make every number realistic.`,
+Make every number realistic.
+
+${CHART_OUTPUT_INSTRUCTION}
+
+Recommended charts for this technical module:
+1. A **line** chart of the recent price series with support/resistance levels as visible data points. Use 30-60 daily candles: x=ISO date, y=close price.
+2. A **bar** chart of volume by day (last 14 days): x=date, y=volume.
+3. A **table** for the ideal entry / stop / target plan (headers: ["Entry","Stop-Loss","Target","R:R Ratio","Position Size"], single data row).
+4. A **table** for support/resistance levels (headers: ["Level","Price","Significance"]).`,
   },
   "hv-dividend": {
     persona: "Endowment Portfolio Manager, Harvard Management Company",

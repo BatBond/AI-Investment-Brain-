@@ -15,8 +15,9 @@ import {
   Swords,
   Radar,
   Globe2,
-  StickyNote,
+  NotebookPen,
   Network,
+  Send,
 } from "lucide-react";
 
 export type SectionId =
@@ -35,15 +36,18 @@ export type SectionId =
   | "bain-competitive"
   | "ren-patterns"
   | "mck-macro"
-  | "braindump"
-  | "knowledge-graph";
+  | "notes-knowledge"
+  | "knowledge-graph"
+  | "automation";
+
+export type SectionGroup = "core" | "analyst" | "knowledge" | "automation";
 
 export interface SectionDef {
   id: SectionId;
   label: string;
   short: string;
   icon: LucideIcon;
-  group: "core" | "analyst" | "knowledge";
+  group: SectionGroup;
   firm?: string;
 }
 
@@ -65,11 +69,29 @@ export const SECTIONS: SectionDef[] = [
   { id: "bain-competitive", label: "Bain Competitive Analysis", short: "BAIN", icon: Swords, group: "analyst", firm: "Bain" },
   { id: "ren-patterns", label: "RenTec Pattern Finder", short: "REN", icon: Radar, group: "analyst", firm: "Renaissance" },
   { id: "mck-macro", label: "McK Macro Impact", short: "MCK", icon: Globe2, group: "analyst", firm: "McKinsey" },
-  // Knowledge
-  { id: "braindump", label: "Braindump / Notes", short: "NOTE", icon: StickyNote, group: "knowledge" },
+  // Knowledge & Notes
+  { id: "notes-knowledge", label: "Notes & Knowledge", short: "NOTE", icon: NotebookPen, group: "knowledge" },
   { id: "knowledge-graph", label: "Knowledge Graph", short: "KGRF", icon: Network, group: "knowledge" },
+  // Automation
+  { id: "automation", label: "Email Automation", short: "AUTO", icon: Send, group: "automation" },
 ];
 
 export const SECTION_MAP: Record<SectionId, SectionDef> = Object.fromEntries(
   SECTIONS.map((s) => [s.id, s])
 ) as Record<SectionId, SectionDef>;
+
+export const GROUP_LABELS: Record<SectionGroup, string> = {
+  core: "Core",
+  analyst: "Wall Street Analyst Modules",
+  knowledge: "Knowledge & Notes",
+  automation: "Automation",
+};
+
+export const GROUP_ORDER: SectionGroup[] = ["core", "analyst", "knowledge", "automation"];
+
+export const GROUPED_SECTIONS: { group: SectionGroup; label: string; items: SectionDef[] }[] =
+  GROUP_ORDER.map((g) => ({
+    group: g,
+    label: GROUP_LABELS[g],
+    items: SECTIONS.filter((s) => s.group === g),
+  }));

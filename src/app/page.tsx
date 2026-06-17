@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Header } from "@/components/layout/header";
-import { TabNav } from "@/components/layout/tab-nav";
+import { useCallback, useEffect, useState } from "react";
+import { Sidebar, MobileSidebar } from "@/components/layout/sidebar";
+import { TopBar } from "@/components/layout/top-bar";
 import { Footer } from "@/components/layout/footer";
 import { type SectionId } from "@/lib/sections";
 
@@ -11,8 +11,9 @@ import { TickerSearch } from "@/components/sections/ticker-search";
 import { Personas } from "@/components/sections/personas";
 import { AIAgent } from "@/components/sections/ai-agent";
 import { MorningBrief } from "@/components/sections/morning-brief";
-import { Braindump } from "@/components/sections/braindump";
+import { NotesKnowledge } from "@/components/sections/notes-knowledge";
 import { KnowledgeGraph } from "@/components/sections/knowledge-graph";
+import { Automation } from "@/components/sections/automation";
 import { GsScreener } from "@/components/sections/gs-screener";
 import { MsDcf } from "@/components/sections/ms-dcf";
 import { BwRisk } from "@/components/sections/bw-risk";
@@ -26,25 +27,47 @@ import { MckMacro } from "@/components/sections/mck-macro";
 
 export default function Home() {
   const [active, setActive] = useState<SectionId>("dashboard");
-  // Ticker context that flows from header search / dashboard into deep-dive modules.
+  // Ticker context that flows from sidebar search / dashboard into deep-dive modules.
   const [tickerContext, setTickerContext] = useState<string | undefined>(undefined);
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navigate = useCallback(
-    (id: SectionId, ticker?: string) => {
-      if (ticker) setTickerContext(ticker);
-      setActive(id);
-      // scroll main content to top on section change
-      if (typeof window !== "undefined") {
-        window.scrollTo({ top: 0, behavior: "smooth" });
+  // Restore sidebar collapsed state from localStorage
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("aib-sidebar-collapsed");
+      if (v === "1") setCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem("aib-sidebar-collapsed", next ? "1" : "0");
+      } catch {
+        // ignore
       }
-    },
-    []
-  );
+      return next;
+    });
+  }, []);
+
+  const navigate = useCallback((id: SectionId, ticker?: string) => {
+    if (ticker) setTickerContext(ticker);
+    setActive(id);
+    setMobileOpen(false);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
 
   const selectTicker = useCallback(
     (t: string) => {
       setTickerContext(t);
       setActive("ticker-search");
+      setMobileOpen(false);
       if (typeof window !== "undefined") {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
@@ -52,56 +75,74 @@ export default function Home() {
     []
   );
 
-  const openTickerSearch = useCallback(() => setActive("ticker-search"), []);
-
   return (
-    <div className="flex min-h-screen flex-col bg-slate-950">
-      <Header
+    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+      <Sidebar
+        activeSection={active}
+        onSectionChange={navigate}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
         onSelectTicker={selectTicker}
-        onOpenTickerSearch={openTickerSearch}
       />
-      <TabNav active={active} onChange={(id) => navigate(id)} />
+      <MobileSidebar
+        open={mobileOpen}
+        onOpenChange={setMobileOpen}
+        activeSection={active}
+        onSectionChange={navigate}
+        collapsed={false}
+        onToggleCollapsed={() => setMobileOpen(false)}
+        onSelectTicker={selectTicker}
+      />
 
-      <main className="flex-1 bg-slate-950">
-        <div className="mx-auto max-w-7xl px-3 py-5 sm:px-4 sm:py-6">
-          {active === "dashboard" && (
-            <Dashboard onNavigate={navigate} onSelectTicker={selectTicker} />
-          )}
-          {active === "ticker-search" && (
-            <TickerSearch
-              initialTicker={tickerContext}
-              onNavigate={navigate}
-            />
-          )}
-          {active === "personas" && <Personas initialTicker={tickerContext} />}
-          {active === "ai-agent" && <AIAgent />}
-          {active === "morning-brief" && (
-            <MorningBrief onNavigate={navigate} onSelectTicker={selectTicker} />
-          )}
-          {active === "gs-screener" && <GsScreener />}
-          {active === "ms-dcf" && <MsDcf initialTicker={tickerContext} />}
-          {active === "bw-risk" && <BwRisk />}
-          {active === "jpm-earnings" && (
-            <JpmEarnings initialTicker={tickerContext} />
-          )}
-          {active === "br-portfolio" && <BrPortfolio />}
-          {active === "cit-technical" && (
-            <CitTechnical initialTicker={tickerContext} />
-          )}
-          {active === "hv-dividend" && <HvDividend />}
-          {active === "bain-competitive" && (
-            <BainCompetitive initialTicker={tickerContext} />
-          )}
-          {active === "ren-patterns" && (
-            <RenPatterns initialTicker={tickerContext} />
-          )}
-          {active === "mck-macro" && <MckMacro />}
-          {active === "braindump" && <Braindump />}
-          {active === "knowledge-graph" && <KnowledgeGraph />}
-        </div>
-      </main>
-
-      <Footer />
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopBar
+          activeSection={active}
+          onMenuClick={() => setMobileOpen(true)}
+          showMenu
+        />
+        <main className="flex-1 w-full">
+          <div className="mx-auto max-w-7xl px-3 py-5 sm:px-4 sm:py-6">
+            {active === "dashboard" && (
+              <Dashboard onNavigate={navigate} onSelectTicker={selectTicker} />
+            )}
+            {active === "ticker-search" && (
+              <TickerSearch
+                initialTicker={tickerContext}
+                onNavigate={navigate}
+              />
+            )}
+            {active === "personas" && <Personas initialTicker={tickerContext} />}
+            {active === "ai-agent" && <AIAgent />}
+            {active === "morning-brief" && (
+              <MorningBrief onNavigate={navigate} onSelectTicker={selectTicker} />
+            )}
+            {active === "gs-screener" && <GsScreener />}
+            {active === "ms-dcf" && <MsDcf initialTicker={tickerContext} />}
+            {active === "bw-risk" && <BwRisk />}
+            {active === "jpm-earnings" && (
+              <JpmEarnings initialTicker={tickerContext} />
+            )}
+            {active === "br-portfolio" && <BrPortfolio />}
+            {active === "cit-technical" && (
+              <CitTechnical initialTicker={tickerContext} />
+            )}
+            {active === "hv-dividend" && <HvDividend />}
+            {active === "bain-competitive" && (
+              <BainCompetitive initialTicker={tickerContext} />
+            )}
+            {active === "ren-patterns" && (
+              <RenPatterns initialTicker={tickerContext} />
+            )}
+            {active === "mck-macro" && <MckMacro />}
+            {active === "notes-knowledge" && (
+              <NotesKnowledge onSelectTicker={selectTicker} />
+            )}
+            {active === "knowledge-graph" && <KnowledgeGraph />}
+            {active === "automation" && <Automation />}
+          </div>
+        </main>
+        <Footer />
+      </div>
     </div>
   );
 }

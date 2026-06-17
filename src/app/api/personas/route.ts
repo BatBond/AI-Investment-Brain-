@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runPersonas } from "@/lib/zai";
 import { PERSONA_PROMPTS } from "@/lib/analyst-prompts";
-import { getTickerData, getTechnicalIndicators } from "@/lib/market-data";
+import {
+  getTickerData,
+  getTechnicalIndicators,
+} from "@/lib/market-data";
+import {
+  getLiveFundamentals,
+  formatFundamentalsForLLM,
+} from "@/lib/market-data-live";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,64 +30,89 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ticker is required." }, { status: 400 });
   }
 
-  const data = getTickerData(ticker);
-  // We pass either real mock data or a generic stub so the LLM still works
-  // for tickers outside our 30-stock universe.
-  const tech = data ? getTechnicalIndicators(ticker) : null;
+  // Try live fundamentals first; fall back to mock
+  const live = await getLiveFundamentals(ticker);
+  const mock = getTickerData(ticker);
+  const tech = mock ? getTechnicalIndicators(ticker) : null;
 
-  const payload = `Analyze the stock **${ticker}**${
-    data ? ` (${data.name}, ${data.sector})` : ""
-  } using these representative fundamentals:
+  let payload: string;
+  if (live) {
+    const lines: string[] = [
+      formatFundamentalsForLLM(live),
+      "",
+      "Technical indicators (computed from representative historical data):",
+    ];
+    if (tech) {
+      lines.push(
+        JSON.stringify(
+          {
+            sma50: tech.sma50,
+            sma200: tech.sma200,
+            rsi14: tech.rsi14,
+            macd: tech.macd,
+            trend: tech.trend,
+            support: tech.support,
+            resistance: tech.resistance,
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      lines.push("No technical data available — use representative values consistent with this profile.");
+    }
+    payload = `Analyze the stock **${ticker}** using these fundamentals:\n\n${lines.join("\n")}\n\nReturn your verdict JSON now.`;
+  } else if (mock) {
+    payload = `Analyze the stock **${ticker}** (${mock.name}, ${mock.sector}) using these representative fundamentals:
 
-${
-  data
-    ? JSON.stringify(
-        {
-          symbol: data.symbol,
-          name: data.name,
-          sector: data.sector,
-          industry: data.industry,
-          price: data.price,
-          marketCap: data.marketCap,
-          peRatio: data.peRatio,
-          forwardPe: data.forwardPe,
-          pbRatio: data.pbRatio,
-          eps: data.eps,
-          beta: data.beta,
-          dividendYield: data.dividendYield,
-          payoutRatio: data.payoutRatio,
-          high52: data.high52,
-          low52: data.low52,
-          revenue: data.revenue,
-          revenueGrowthYoY: data.revenueGrowthYoY,
-          netMargin: data.netMargin,
-          debtToEquity: data.debtToEquity,
-          fcf: data.fcf,
-          esgScore: data.esgScore,
-          piotroskiF: data.piotroskiF,
-          technicals: tech
-            ? {
-                sma50: tech.sma50,
-                sma200: tech.sma200,
-                rsi14: tech.rsi14,
-                macd: tech.macd,
-                trend: tech.trend,
-                support: tech.support,
-                resistance: tech.resistance,
-              }
-            : undefined,
-        },
-        null,
-        2
-      )
-    : `No detailed mock data is available for ${ticker}. Use your best judgment and representative sample data consistent with a company of this profile.`
-}
+${JSON.stringify(
+  {
+    symbol: mock.symbol,
+    name: mock.name,
+    sector: mock.sector,
+    industry: mock.industry,
+    price: mock.price,
+    marketCap: mock.marketCap,
+    peRatio: mock.peRatio,
+    forwardPe: mock.forwardPe,
+    pbRatio: mock.pbRatio,
+    eps: mock.eps,
+    beta: mock.beta,
+    dividendYield: mock.dividendYield,
+    payoutRatio: mock.payoutRatio,
+    high52: mock.high52,
+    low52: mock.low52,
+    revenue: mock.revenue,
+    revenueGrowthYoY: mock.revenueGrowthYoY,
+    netMargin: mock.netMargin,
+    debtToEquity: mock.debtToEquity,
+    fcf: mock.fcf,
+    esgScore: mock.esgScore,
+    piotroskiF: mock.piotroskiF,
+    technicals: tech
+      ? {
+          sma50: tech.sma50,
+          sma200: tech.sma200,
+          rsi14: tech.rsi14,
+          macd: tech.macd,
+          trend: tech.trend,
+          support: tech.support,
+          resistance: tech.resistance,
+        }
+      : undefined,
+  },
+  null,
+  2
+)}
 
 Return your verdict JSON now.`;
+  } else {
+    payload = `Analyze the stock **${ticker}**. No detailed mock data is available — use your best judgment and representative sample data consistent with a company of this profile. Return your verdict JSON now.`;
+  }
 
   try {
     const personas = await runPersonas(PERSONA_PROMPTS, payload);
-    return NextResponse.json({ ticker, personas });
+    return NextResponse.json({ ticker, personas, liveData: !!live });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(

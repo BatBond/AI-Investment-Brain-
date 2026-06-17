@@ -3,6 +3,11 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import { QueryProvider } from "@/components/query-provider";
+import { initSchedulerOnce } from "@/lib/scheduler-init";
+
+// Kick off the email scheduler on app boot (idempotent — safe under hot reload).
+initSchedulerOnce();
 
 const inter = Inter({
   variable: "--font-geist-sans",
@@ -42,19 +47,21 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground min-h-screen flex flex-col`}
       >
-        {children}
-        <Toaster />
-        <SonnerToaster
-          position="top-right"
-          theme="dark"
-          toastOptions={{
-            style: {
-              background: "#1e293b",
-              border: "1px solid #334155",
-              color: "#f1f5f9",
-            },
-          }}
-        />
+        <QueryProvider>
+          {children}
+          <Toaster />
+          <SonnerToaster
+            position="top-right"
+            theme="dark"
+            toastOptions={{
+              style: {
+                background: "#1e293b",
+                border: "1px solid #334155",
+                color: "#f1f5f9",
+              },
+            }}
+          />
+        </QueryProvider>
       </body>
     </html>
   );

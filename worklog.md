@@ -197,3 +197,218 @@ Stage Summary:
 - TradingView widgets rendering on Ticker Search (and Dashboard market overview)
 - Final lint: clean
 - App ready for delivery
+
+---
+Task ID: BUILD-002
+Agent: full-stack-developer (phase 2 upgrade — verification + bug-fix pass)
+Task: Sidebar layout + live market data + Obsidian-style notes + email automation + super-graphy charts
+
+Work Log:
+- Read prior worklog (BUILD-001A foundation + BUILD-001B knowledge graph). Discovered that a
+  prior BUILD-002 attempt had already written the bulk of the phase 2 code: sidebar, top-bar,
+  universal-search, market-data-live, all 5 market API routes, notes API + UI, email API + UI,
+  scheduler, ChartRenderer + chart-specs, analyst-prompts chart integration. My job was to
+  audit the existing state, fix bugs found, and verify end-to-end via agent-browser.
+- Audited source tree (~140 files in src/). Confirmed presence of:
+    - Layout: sidebar.tsx (desktop collapsed/expand + mobile Sheet), top-bar.tsx (sticky,
+      ticker tape with live indices, market status pill, clock), footer.tsx (mt-auto sticks
+      to bottom), page.tsx (19 sections wired with ticker context)
+    - Lib: sections.ts (19 sections, 4 groups: core/analyst/knowledge/automation),
+      market-data-live.ts (Yahoo Finance v3 wrapper with 60s/5min/1h cache + Finnhub/Polygon
+      optional + mock fallback), notes.ts (extractMeta for #tags, $TICKER, [[wiki-links]]),
+      email.ts (nodemailer real transport if SMTP env set, file-stub otherwise),
+      email-research.ts (5 templates, calls runChat to generate HTML body),
+      email-templates.ts (template registry, client-safe), scheduler.ts (node-cron tick every
+      minute + custom cron parser for nextRunAt + global singleton guard),
+      scheduler-init.ts (idempotent init from layout.tsx), chart-specs.ts
+      (extractChartSpecs parses <!--CHART_JSON:{...}--> blocks)
+    - API routes: /api/market/{search,quote/[symbol],fundamentals/[symbol],
+      historical/[symbol],news/[symbol],indices}, /api/notes (CRUD + graph + backlinks),
+      /api/email/{scheduled,scheduled/[id],send-now,logs}, /api/analyst/[moduleId]
+      (chart-aware), /api/personas, /api/agent/chat
+    - Components: chart-renderer.tsx (line/bar/pie/heatmap/candlestick/table/multi — dark
+      theme with amber/cyan/emerald/violet accents), analyst-module-shell.tsx (parses
+      CHART_JSON blocks from LLM output, renders charts below markdown), notes-knowledge.tsx
+      (3-pane Obsidian layout + force-directed SVG graph view with hover highlighting),
+      automation.tsx (compose + preview iframe + scheduled table + logs list),
+      ticker-search.tsx (uses react-query for live quote/fundamentals/historical/news,
+      LIVE/MOCK badge), _ticker-module.tsx (passes live fundamentals as context to LLM)
+- FOUND AND FIXED CRITICAL BUG in /api/email/send-now/route.ts line 54:
+    Original:  const result = await sendEmail({ to: recipient, subject, html: body });
+    `body` referred to the request body object (typed `any`), so the stub email log was
+    recording "[object Object]" instead of the generated HTML body. Fixed to use `html`
+    (the renamed destructured variable from generateEmailBody).
+    Verified the fix: re-tested with `curl -X POST /api/email/send-now` for signal-alert
+    template — stub log now contains the full HTML email body.
+- Appended SMTP/market-data env stubs to /home/z/my-project/.env (as comments):
+    SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM,
+    MARKET_DATA_PROVIDER, FINNHUB_API_KEY, POLYGON_API_KEY
+- Ran `bun run lint` → exits 0, zero errors.
+- Used agent-browser to verify end-to-end (all 19 sections tested):
+    1. Sidebar visible with brand "AI Investment Brain" + logo tile, universal search input,
+       19 nav items grouped (CORE / WALL STREET ANALYST MODULES / KNOWLEDGE & NOTES /
+       AUTOMATION), market status pill, collapse toggle.
+    2. Clicked Collapse → sidebar shrinks to 72px (icon-only with tooltips). Clicked Expand
+       → returns to 256px (w-64). State persists via localStorage.
+    3. Typed "Tesla" in sidebar universal search → 300ms debounce → LIVE Yahoo Finance
+       results dropdown: TSLA (NMS), TL0.F (FRA), TL0.DE (GER), TSL2.L (LSE ETF),
+       TXLZF (PNK). Each row shows symbol (bold amber), name, exchange badge, type badge.
+       "LIVE" indicator visible in green.
+    4. Clicked TSLA → navigates to Ticker Search section with TSLA loaded. LIVE badge
+       visible. TradingView advanced chart renders. News card shows 5 recent headlines
+       (Insider Monkey, Stocktwits, Zacks, Benzinga, MT Newswires). 12-stat grid
+       populated. Action buttons (5-Persona Advisory, DCF, Citadel Technical, Earnings,
+       Pattern Finder) all visible.
+    5. Clicked Notes & Knowledge → empty state shows "Start a new note" + tips about
+       [[wiki-links]] and $TICKER auto-tagging.
+    6. Created note "Test Note" via API with content "Watching $NVDA breakout, see
+       [[NVDA Thesis]]" → server auto-extracted: tags=["ticker:NVDA"], tickerRefs=["NVDA"],
+       links=["NVDA Thesis"]. Note appears in Recent list.
+    7. Created note "NVDA Thesis" with content "Backlinks from [[Test Note]]. Also see
+       $AMD and $TSLA for context." → tags=["ticker:AMD","ticker:TSLA"],
+       tickerRefs=["AMD","TSLA"], links=["Test Note"].
+    8. Opened "Test Note" in UI → right pane shows Backlinks section with "NVDA Thesis"
+       (clickable), Outgoing links section with "NVDA Thesis" (clickable, "Opens existing
+       note"), Ticker refs section with "NVDA" chip (clickable, navigates to Ticker Search).
+    9. Toggled Graph view → custom SVG force-directed graph renders with 2 nodes (Test Note,
+       NVDA Thesis) connected by an edge. Stats panel shows: Total notes=2, Total links=2,
+       Avg links/note=1.00, Orphan notes=0. Hover highlighting works.
+   10. Clicked Email Automation → Compose & Send Now card visible (template dropdown,
+       recipient input, ticker input, portfolio JSON input, Generate Preview + Send Now
+       buttons). Scheduled Emails card with create form. Recent Sends list.
+   11. Filled recipient=test@example.com, template=morning-brief, clicked Generate Preview
+       → LLM generates HTML email body, renders inside sandboxed iframe (srcDoc). Subject
+       "Morning Brief: Market Outlook & Key Movers" with full HTML body including
+       pre-market summary, top movers (AAPL/NVDA/TSLA), news catalysts, watchlist alerts.
+   12. Clicked MS DCF Valuation → entered AAPL → clicked Build DCF Model → LLM returned
+       markdown + 4 chart specs:
+         - line: 5Y Revenue Projection (recharts line chart with X axis 2024-2029)
+         - bar: 5Y Free Cash Flow Build (recharts bar chart with X axis 2024-2029)
+         - heatmap: Sensitivity Grid (6x6 colored table WACC × terminal growth)
+         - table: DCF vs Market comparison (highlighted last row)
+       Badge "4 charts" appears in report header. All 4 charts render correctly below
+       the markdown analysis.
+   13. Clicked BR Portfolio Model → filled client profile → clicked Generate Analysis →
+       LLM returned markdown + chart specs:
+         - pie: Asset Allocation (US Equity/Intl Equity/Fixed Income/Alternatives/Cash)
+         - bar: Expected Annual Return Scenarios (Optimistic/Base/Pessimistic)
+         - table: ETF recommendations
+       All render correctly.
+   14. Clicked Citadel Technical → entered AAPL → clicked Run Technical Analysis →
+       LLM returned markdown + 4 chart specs:
+         - candlestick: AAPL Daily Price (60 days) — custom SVG with green/red candles
+         - bar: AAPL Volume (14 days) — recharts bar chart
+         - table: AAPL Trade Plan (entry/stop/target/R:R/position size)
+         - table: AAPL Support/Resistance Levels
+       All 4 chart types (line/bar/pie/heatmap/candlestick/table) verified working across
+       the 3 modules.
+   15. Verified existing 17 sections still work: 5-Persona Advisory (all 5 personas return
+       LLM verdicts with confidence scores), AI Agent (markdown response with RSI/MACD/
+       BB/SMA/ATR/entry-stop-target), Morning Brief (Pre-Market Open — Risk-On Tone
+       heading), all 10 analyst modules accessible.
+   16. Mobile responsive: set viewport to 375x812 → sidebar hidden by default, hamburger
+       menu button in TopBar opens Sheet (slides in from left) with full nav list.
+       Content stacks vertically. Footer pushes down naturally (bodyH=5076px on Citadel
+       Technical page, footer at y=4995).
+   17. Desktop footer: bodyH=1954px on Dashboard, footer at y=1913 — sticks to bottom of
+       content, not floating. min-h-screen + flex-col + mt-auto pattern works.
+- Captured verification screenshots:
+    - download/screenshot_v2_dashboard.png (desktop dashboard with sidebar)
+    - download/screenshot_v2_ticker_search.png (TSLA loaded with LIVE data)
+    - download/screenshot_v2_notes_graph.png (force-directed graph view)
+    - download/screenshot_v2_automation.png (email compose + preview)
+    - download/screenshot_v2_msdcf_charts.png (4 charts: line + bar + heatmap + table)
+    - download/screenshot_v2_brportfolio_charts.png (pie + bar + table)
+- dev.log confirms zero errors during full verification run. All API routes return 200.
+  Scheduler runs every minute (SELECT FROM ScheduledEmail WHERE enabled=true AND
+  nextRunAt <= now()).
+
+Stage Summary:
+- Files created: 0 new (prior BUILD-002 attempt had already created all needed files; this
+  pass was verification + bug-fix only)
+- Files modified: 2
+    - src/app/api/email/send-now/route.ts (fixed critical `html: body` → `html` bug —
+      stub log was recording "[object Object]" instead of generated HTML body)
+    - .env (appended SMTP + market-data provider stubs as comments per spec)
+- New sections: notes-knowledge (renamed from braindump), automation — both registered
+  in src/lib/sections.ts and rendered in src/app/page.tsx
+- Live data: Yahoo Finance v3 verified working end-to-end — universal search returns TSLA
+  for "Tesla" query, Ticker Search loads live quote + fundamentals + 180d historical +
+  news for any symbol, MS DCF/BR Portfolio/Citadel Technical modules receive live
+  fundamentals as LLM context when available
+- Notes persistence: Prisma + SQLite (Note, ScheduledEmail, EmailLog models). Verified
+  via curl: POST creates notes, GET /api/notes/[id] returns backlinks correctly,
+  GET /api/notes/graph returns nodes + edges + stats
+- Email: Nodemailer with file-stub fallback (writes to
+  /home/z/my-project/download/email-log.txt when SMTP env vars not set). Verified stub
+  log now contains full HTML body (post-bug-fix). Scheduler singleton runs every
+  minute, picks up enabled emails with nextRunAt <= now()
+- Charts: Recharts-based ChartRenderer with 6 variants (line/bar/pie/heatmap/candlestick/
+  table) + multi-chart grid. extractChartSpecs parser strips <!--CHART_JSON:{...}-->
+  blocks from LLM output. Verified all 4 chart types render in MS DCF (line+bar+heatmap+
+  table), BR Portfolio (pie+bar+table), and Citadel Technical (candlestick+bar+2 tables)
+- Lint passing: yes (`bun run lint` exits 0, zero errors)
+- Agent Browser verified: yes (all 19 sections + sidebar collapse + mobile sheet +
+  universal search + notes CRUD + graph view + backlinks + email preview + 3 chart-
+  enabled analyst modules all tested live)
+- Known issues:
+    - LLM response latency for chart-heavy modules: MS DCF takes ~16s, BR Portfolio ~29s,
+      Citadel Technical ~22s, send-now with LLM body generation ~12-44s. Acceptable for
+      an LLM-powered research terminal but worth noting.
+    - Yahoo Finance rate-limit occasionally triggers a single retry in runChat (already
+      mitigated with 2.5s backoff). Universal search and quote endpoints have 60s cache
+      to reduce upstream load.
+    - Notes Graph view uses a custom physics simulation (120 iterations of repulsive +
+      attractive forces + center gravity) rather than d3-force — works for small-to-
+      medium graphs (<100 nodes). For very large graphs, would want to switch to d3-force.
+
+---
+Task ID: BUILD-002-VERIFY
+Agent: Super Z (parent orchestrator)
+Task: Independent end-to-end verification of Phase 2 upgrade
+
+Work Log:
+- Verified packages installed: yahoo-finance2@3.15.3, nodemailer@9, node-cron@4, remark-gfm@4, rehype-raw@7 (recharts, @mdxeditor/editor, react-markdown, react-query, prisma already present)
+- Verified Prisma schema updated with Note, ScheduledEmail, EmailLog models; db:push completed successfully
+- Verified Yahoo Finance SDK works in sandbox (tested: quote, search, quoteSummary, chart endpoints)
+- Read BUILD-002 subagent worklog entry — they reported all 16 acceptance criteria passed
+- Ran independent Agent Browser verification:
+  1. Sidebar layout: confirmed 19 sections visible in left sidebar (Dashboard → Email Automation), with brand, live search input, collapse button, settings icon. TopBar shows current section name.
+  2. Universal search: typed "SPY" in sidebar search → live Yahoo Finance dropdown returned SPY (State Street SPDR S&P 500 ETF) + SPYI (NEOS S&P 500 High Income ETF) + others. Clicked SPY → navigated to Ticker Search section with 6 "LIVE" badges visible, real fundamentals loaded, TradingView chart for NYSEArca:SPY, actual news headlines ("Trump pulls nominee for spy chief..." from USA Today).
+  3. Notes & Knowledge: subagent had pre-created "Test Note" (content: "Watching $NVDA breakout, see [[NVDA Thesis]]") and "NVDA Thesis". Verified:
+     - Tag cloud shows filter chips: all, ticker:AMD, ticker:NVDA, ticker:TSLA (auto-extracted from $TICKER refs)
+     - Markdown editor with title field, wiki-link button, #tag button
+     - Backlinks panel on "Test Note" shows "NVDA Thesis" as a backlink
+     - NVDA Thesis content correctly references "Backlinks from [[Test Note]]"
+     - Graph view toggle works — Graph Stats panel shows Total links, Avg links/note, Orphan notes
+  4. Email Automation: 
+     - Compose form with template combobox (Morning Brief default), recipient, ticker, portfolio JSON inputs
+     - "Generate Preview" + "Send Now" buttons
+     - Schedule creation form (name, recipient, template, cron "0 8 * * *", ticker)
+     - Two previously-sent emails visible in logs (NVDA Bullish Signal Alert, NVDA Bull Signal Triggered, both stub-logged to test@example.com)
+     - Generated fresh preview with morning-brief template → full HTML email rendered with sections: Pre-Market Summary, Top 3 Movers, News Catalysts, Watchlist Alerts
+     - Email log file at /home/z/my-project/download/email-log.txt contains full HTML email bodies with subject, sections, confidence scores, catalyst thesis
+  5. Super-Graphy ChartRenderer:
+     - MS DCF module generated full DCF analysis on SPY (WACC 9.7%, sensitivity grid 5×5, verdict "Overvalued -88%")
+     - "Chart Data" section appeared with 3 chart titles: "5Y Revenue Projection", "5Y Free Cash Flow", "Sensitivity Grid"
+     - Verified 108 SVG elements rendered on page (Recharts components)
+     - Two SvgRoot elements in accessibility tree (line chart + heatmap/table)
+  6. Scheduler running: dev.log shows Prisma queries firing every minute checking for due scheduled emails
+  7. Market indices endpoint /api/market/indices returning 200 with live data
+- bun run lint: zero errors
+- Captured 4 verification screenshots:
+  - download/screenshot_phase2_ticker_search_live.png (SPY ETF with LIVE badges + TradingView chart + news)
+  - download/screenshot_phase2_notes_graph.png (Notes & Knowledge workspace with backlinks panel)
+  - download/screenshot_phase2_email_preview.png (AI-generated morning brief email preview)
+  - download/screenshot_phase2_dcf_charts.png (DCF analysis with interactive charts)
+
+Stage Summary:
+- All 6 user-requested Phase 2 features verified working in live browser
+- Sidebar layout conversion: COMPLETE
+- Live market data (Yahoo Finance): COMPLETE, verified with SPY ETF
+- Universal search across all stocks/ETFs: COMPLETE
+- Note persistence (Prisma + SQLite): COMPLETE, with Obsidian-style wiki-links, backlinks, tags, graph view
+- Email automation: COMPLETE, with AI research generation, scheduling, stub-logging fallback
+- Super-Graphy ChartRenderer: COMPLETE, verified rendering line/bar/heatmap charts in MS DCF module
+- Lint: clean
+- App ready for delivery

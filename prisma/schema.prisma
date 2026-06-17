@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -29,4 +26,61 @@ model Post {
   authorId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// AI Investment Brain — Notes & Knowledge (Obsidian-style)
+// ============================================================================
+
+model Note {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @default("") // Markdown source
+  tags        String   @default("[]") // JSON array of tag strings
+  tickerRefs  String   @default("[]") // JSON array of tickers mentioned (e.g. ["AAPL","NVDA"])
+  links       String   @default("[]") // JSON array of wiki-link targets (titles)
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([title])
+  @@index([updatedAt])
+}
+
+// ============================================================================
+// AI Investment Brain — Email Automation
+// ============================================================================
+
+model ScheduledEmail {
+  id            String   @id @default(cuid())
+  name          String
+  recipient     String
+  subject       String
+  template      String   @default("custom") // morning-brief | portfolio-review | signal-alert | dcf-deepdive | custom
+  cronExpr      String   @default("0 8 * * *") // default: 8am daily
+  ticker        String?  // optional ticker context for the AI research
+  portfolioJson String?  // optional JSON portfolio for risk/portfolio templates
+  enabled       Boolean  @default(true)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  lastStatus    String?  // success | error | pending
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([enabled, nextRunAt])
+}
+
+model EmailLog {
+  id            String   @id @default(cuid())
+  scheduledEmailId String?
+  recipient     String
+  subject       String
+  body          String
+  status        String   // sent | failed | stub-logged
+  error         String?
+  sentAt        DateTime @default(now())
+
+  @@index([sentAt])
+  @@index([scheduledEmailId])
 }

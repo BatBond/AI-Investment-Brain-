@@ -1,0 +1,931 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+     4→     4→import {
+     5→     5→  Card,
+     6→     6→  CardContent,
+     7→     7→  CardHeader,
+     8→     8→  CardTitle,
+     9→     9→  CardDescription,
+    10→    10→} from "@/components/ui/card";
+    11→    11→import { Input } from "@/components/ui/input";
+    12→    12→import { Textarea } from "@/components/ui/textarea";
+    13→    13→import { Button } from "@/components/ui/button";
+    14→    14→import { Badge } from "@/components/ui/badge";
+    15→    15→import {
+    16→    16→  NotebookPen,
+    17→    17→  Plus,
+    18→    18→  Search,
+    19→    19→  Tag,
+    20→    20→  Trash2,
+    21→    21→  Pin,
+    22→    22→  PinOff,
+    23→    23→  Clock,
+    24→    24→  ArrowLeft,
+    25→    25→  ArrowUpRight,
+    26→    26→  Link2,
+    27→    27→  Network,
+    28→    28→  List as ListIcon,
+    29→    29→  DollarSign,
+    30→    30→  Hash,
+    31→    31→  Bold,
+    32→    32→  Italic,
+    33→    33→  Heading2,
+    34→    34→  Code,
+    35→    35→  ListOrdered,
+    36→    36→  Quote,
+    37→    37→  ExternalLink,
+    38→    38→} from "lucide-react";
+    39→    39→import { toast } from "sonner";
+    40→    40→import { cn } from "@/lib/utils";
+    41→    41→import { Markdown } from "@/components/markdown";
+    42→    42→import type { SectionId } from "@/lib/sections";
+    43→    43→
+    44→    44→interface NoteDTO {
+    45→    45→  id: string;
+    46→    46→  title: string;
+    47→    47→  content: string;
+    48→    48→  tags: string[];
+    49→    49→  tickerRefs: string[];
+    50→    50→  links: string[];
+    51→    51→  pinned: boolean;
+    52→    52→  createdAt: string;
+    53→    53→  updatedAt: string;
+    54→    54→}
+    55→    55→
+    56→    56→interface NotesKnowledgeProps {
+    57→    57→  onSelectTicker: (symbol: string) => void;
+    58→    58→}
+    59→    59→
+    60→    60→type ViewMode = "list" | "graph";
+    61→    61→
+    62→    62→export function NotesKnowledge({ onSelectTicker }: NotesKnowledgeProps) {
+    63→    63→  const [notes, setNotes] = useState<NoteDTO[]>([]);
+    64→    64→  const [loading, setLoading] = useState(true);
+    65→    65→  const [activeId, setActiveId] = useState<string | null>(null);
+    66→    66→  const [draft, setDraft] = useState<NoteDTO | null>(null);
+    67→    67→  const [tagFilter, setTagFilter] = useState<string | null>(null);
+    68→    68→  const [search, setSearch] = useState("");
+    69→    69→  const [view, setView] = useState<ViewMode>("list");
+    70→    70→  const [backlinks, setBacklinks] = useState<NoteDTO[]>([]);
+    71→    71→  const [graphData, setGraphData] = useState<{
+    72→    72→    nodes: { id: string; title: string; tags: string[]; pinned: boolean; linkCount: number }[];
+    73→    73→    links: { source: string; target: string }[];
+    74→    74→    stats: { totalNodes: number; totalLinks: number; avgLinksPerNote: string; orphanCount: number };
+    75→    75→  } | null>(null);
+    76→    76→
+    77→    77→  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    78→    78→  const draftRef = useRef<NoteDTO | null>(null);
+    79→    79→  draftRef.current = draft;
+    80→    80→
+    81→    81→  // Fetch notes list (with current filter/search)
+    82→    82→  const refresh = useCallback(async () => {
+    83→    83→    setLoading(true);
+    84→    84→    try {
+    85→    85→      const params = new URLSearchParams();
+    86→    86→      if (tagFilter) params.set("tag", tagFilter);
+    87→    87→      if (search.trim()) params.set("q", search.trim());
+    88→    88→      const r = await fetch(`/api/notes?${params.toString()}`, { cache: "no-store" });
+    89→    89→      const data = await r.json();
+    90→    90→      setNotes(data.notes ?? []);
+    91→    91→    } catch {
+    92→    92→      toast.error("Failed to load notes");
+    93→    93→    } finally {
+    94→    94→      setLoading(false);
+    95→    95→    }
+    96→    96→  }, [tagFilter, search]);
+    97→    97→
+    98→    98→  useEffect(() => {
+    99→    99→    refresh();
+   100→   100→  }, [refresh]);
+   101→   101→
+   102→   102→  // Fetch graph when in graph view
+   103→   103→  useEffect(() => {
+   104→   104→    if (view !== "graph") return;
+   105→   105→    let cancelled = false;
+   106→   106→    (async () => {
+   107→   107→      try {
+   108→   108→        const r = await fetch("/api/notes/graph", { cache: "no-store" });
+   109→   109→        const d = await r.json();
+   110→   110→        if (!cancelled) setGraphData(d);
+   111→   111→      } catch {
+   112→   112→        /* ignore */
+   113→   113→      }
+   114→   114→    })();
+   115→   115→    return () => {
+   116→   116→      cancelled = true;
+   117→   117→    };
+   118→   118→  }, [view, notes.length]);
+   119→   119→
+   120→   120→  // Fetch backlinks when active note changes
+   121→   121→  useEffect(() => {
+   122→   122→    if (!activeId) {
+   123→   123→      setBacklinks([]);
+   124→   124→      return;
+   125→   125→    }
+   126→   126→    let cancelled = false;
+   127→   127→    (async () => {
+   128→   128→      try {
+   129→   129→        const r = await fetch(`/api/notes/${activeId}`, { cache: "no-store" });
+   130→   130→        const d = await r.json();
+   131→   131→        if (!cancelled) {
+   132→   132→          setBacklinks(d.backlinks ?? []);
+   133→   133→        }
+   134→   134→      } catch {
+   135→   135→        /* ignore */
+   136→   136→      }
+   137→   137→    })();
+   138→   138→    return () => {
+   139→   139→      cancelled = true;
+   140→   140→    };
+   141→   141→  }, [activeId]);
+   142→   142→
+   143→   143→  function startNew() {
+   144→   144→    const blank: NoteDTO = {
+   145→   145→      id: "",
+   146→   146→      title: "Untitled note",
+   147→   147→      content: "",
+   148→   148→      tags: [],
+   149→   149→      tickerRefs: [],
+   150→   150→      links: [],
+   151→   151→      pinned: false,
+   152→   152→      createdAt: new Date().toISOString(),
+   153→   153→      updatedAt: new Date().toISOString(),
+   154→   154→    };
+   155→   155→    setDraft(blank);
+   156→   156→    setActiveId(null);
+   157→   157→  }
+   158→   158→
+   159→   159→  function openNote(n: NoteDTO) {
+   160→   160→    setDraft({ ...n });
+   161→   161→    setActiveId(n.id);
+   162→   162→  }
+   163→   163→
+   164→   164→  // Auto-save 1s after typing stops
+   165→   165→  useEffect(() => {
+   166→   166→    if (!draft) return;
+   167→   167→    if (saveTimer.current) clearTimeout(saveTimer.current);
+   168→   168→    saveTimer.current = setTimeout(async () => {
+   169→   169→      await saveDraft(draft);
+   170→   170→    }, 1000);
+   171→   171→    return () => {
+   172→   172→      if (saveTimer.current) clearTimeout(saveTimer.current);
+   173→   173→    };
+   174→   174→  }, [draft?.title, draft?.content, draft?.pinned]);
+   175→   175→
+   176→   176→  async function saveDraft(d: NoteDTO) {
+   177→   177→    try {
+   178→   178→      if (!d.id) {
+   179→   179→        // Create
+   180→   180→        const r = await fetch("/api/notes", {
+   181→   181→          method: "POST",
+   182→   182→          headers: { "Content-Type": "application/json" },
+   183→   183→          body: JSON.stringify({ title: d.title, content: d.content, pinned: d.pinned }),
+   184→   184→        });
+   185→   185→        const data = await r.json();
+   186→   186→        if (data.note) {
+   187→   187→          setActiveId(data.note.id);
+   188→   188→          setDraft(data.note);
+   189→   189→          toast.success("Note created");
+   190→   190→        }
+   191→   191→      } else {
+   192→   192→        const r = await fetch(`/api/notes/${d.id}`, {
+   193→   193→          method: "PATCH",
+   194→   194→          headers: { "Content-Type": "application/json" },
+   195→   195→          body: JSON.stringify({ title: d.title, content: d.content, pinned: d.pinned }),
+   196→   196→        });
+   197→   197→        const data = await r.json();
+   198→   198→        if (data.note) {
+   199→   199→          setDraft(data.note);
+   200→   200→        }
+   201→   201→      }
+   202→   202→      await refresh();
+   203→   203→    } catch {
+   204→   204→      toast.error("Save failed");
+   205→   205→    }
+   206→   206→  }
+   207→   207→
+   208→   208→  async function deleteNote(id: string) {
+   209→   209→    if (!confirm("Delete this note?")) return;
+   210→   210→    try {
+   211→   211→      await fetch(`/api/notes/${id}`, { method: "DELETE" });
+   212→   212→      if (activeId === id) {
+   213→   213→        setActiveId(null);
+   214→   214→        setDraft(null);
+   215→   215→      }
+   216→   216→      await refresh();
+   217→   217→      toast.success("Note deleted");
+   218→   218→    } catch {
+   219→   219→      toast.error("Delete failed");
+   220→   220→    }
+   221→   221→  }
+   222→   222→
+   223→   223→  async function togglePin(n: NoteDTO) {
+   224→   224→    const updated = { ...n, pinned: !n.pinned };
+   225→   225→    setDraft(updated);
+   226→   226→    if (n.id) {
+   227→   227→      try {
+   228→   228→        await fetch(`/api/notes/${n.id}`, {
+   229→   229→          method: "PATCH",
+   230→   230→          headers: { "Content-Type": "application/json" },
+   231→   231→          body: JSON.stringify({ pinned: !n.pinned }),
+   232→   232→        });
+   233→   233→        await refresh();
+   234→   234→      } catch {
+   235→   235→        /* ignore */
+   236→   236→      }
+   237→   237→    }
+   238→   238→  }
+   239→   239→
+   240→   240→  const allTags = useMemo(() => {
+   241→   241→    const s = new Set<string>();
+   242→   242→    notes.forEach((n) => n.tags.forEach((t) => s.add(t)));
+   243→   243→    return Array.from(s).sort();
+   244→   244→  }, [notes]);
+   245→   245→
+   246→   246→  const pinned = useMemo(() => notes.filter((n) => n.pinned), [notes]);
+   247→   247→  const recent = useMemo(
+   248→   248→    () =>
+   249→   249→      [...notes]
+   250→   250→        .filter((n) => !n.pinned)
+   251→   251→        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+   252→   252→        .slice(0, 12),
+   253→   253→    [notes]
+   254→   254→  );
+   255→   255→
+   256→   256→  function insertSyntax(prefix: string, suffix: string = "", placeholder = "") {
+   257→   257→    if (!draft) return;
+   258→   258→    const ta = document.getElementById("note-textarea") as HTMLTextAreaElement | null;
+   259→   259→    if (!ta) {
+   260→   260→      setDraft({ ...draft, content: draft.content + prefix + placeholder + suffix });
+   261→   261→      return;
+   262→   262→    }
+   263→   263→    const start = ta.selectionStart;
+   264→   264→    const end = ta.selectionEnd;
+   265→   265→    const selected = draft.content.slice(start, end) || placeholder;
+   266→   266→    const next = draft.content.slice(0, start) + prefix + selected + suffix + draft.content.slice(end);
+   267→   267→    setDraft({ ...draft, content: next });
+   268→   268→    requestAnimationFrame(() => {
+   269→   269→      ta.focus();
+   270→   270→      ta.selectionStart = start + prefix.length;
+   271→   271→      ta.selectionEnd = start + prefix.length + selected.length;
+   272→   272→    });
+   273→   273→  }
+   274→   274→
+   275→   275→  return (
+   276→   276→    <div className="space-y-4">
+   277→   277→      {/* Header */}
+   278→   278→      <Card className="border-slate-700 bg-slate-800/60 card-glow">
+   279→   279→        <CardHeader className="pb-3">
+   280→   280→          <div className="flex flex-wrap items-center justify-between gap-3">
+   281→   281→            <div className="flex items-center gap-2">
+   282→   282→              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-amber-500/15 text-amber-400">
+   283→   283→                <NotebookPen className="h-4 w-4" />
+   284→   284→              </div>
+   285→   285→              <div>
+   286→   286→                <CardTitle className="text-base text-slate-50">Notes &amp; Knowledge</CardTitle>
+   287→   287→                <CardDescription className="text-xs text-amber-400/90">
+   288→   288→                  Obsidian-style workspace · auto-saves · supports #tags, $TICKER refs, [[wiki-links]]
+   289→   289→                </CardDescription>
+   290→   290→              </div>
+   291→   291→            </div>
+   292→   292→            <Button onClick={startNew} size="sm" className="bg-amber-500 text-slate-950 hover:bg-amber-400">
+   293→   293→              <Plus className="mr-1.5 h-3.5 w-3.5" />
+   294→   294→              New note
+   295→   295→            </Button>
+   296→   296→          </div>
+   297→   297→        </CardHeader>
+   298→   298→      </Card>
+   299→   299→
+   300→   300→      <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr_280px] gap-4">
+   301→   301→        {/* LEFT PANE: tag cloud, pinned, recent, search, view toggle */}
+   302→   302→        <div className="space-y-3">
+   303→   303→          <Card className="border-slate-700 bg-slate-800/60">
+   304→   304→            <CardContent className="p-3 space-y-3">
+   305→   305→              <div className="relative">
+   306→   306→                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+   307→   307→                <Input
+   308→   308→                  value={search}
+   309→   309→                  onChange={(e) => setSearch(e.target.value)}
+   310→   310→                  placeholder="Search notes…"
+   311→   311→                  className="h-8 bg-slate-900/70 border-slate-700 pl-8 text-xs text-slate-100"
+   312→   312→                />
+   313→   313→              </div>
+   314→   314→              <div className="flex rounded-md border border-slate-700 overflow-hidden">
+   315→   315→                <button
+   316→   316→                  onClick={() => setView("list")}
+   317→   317→                  className={cn(
+   318→   318→                    "flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px]",
+   319→   319→                    view === "list" ? "bg-amber-500/15 text-amber-300" : "text-slate-400 hover:text-slate-200"
+   320→   320→                  )}
+   321→   321→                >
+   322→   322→                  <ListIcon className="h-3 w-3" /> List
+   323→   323→                </button>
+   324→   324→                <button
+   325→   325→                  onClick={() => setView("graph")}
+   326→   326→                  className={cn(
+   327→   327→                    "flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px]",
+   328→   328→                    view === "graph" ? "bg-amber-500/15 text-amber-300" : "text-slate-400 hover:text-slate-200"
+   329→   329→                  )}
+   330→   330→                >
+   331→   331→                  <Network className="h-3 w-3" /> Graph
+   332→   332→                </button>
+   333→   333→              </div>
+   334→   334→            </CardContent>
+   335→   335→          </Card>
+   336→   336→
+   337→   337→          {view === "list" ? (
+   338→   338→            <>
+   339→   339→              {pinned.length > 0 && (
+   340→   340→                <Card className="border-slate-700 bg-slate-800/60">
+   341→   341→                  <CardHeader className="pb-2 pt-3 px-3">
+   342→   342→                    <CardTitle className="text-xs text-amber-400 flex items-center gap-1">
+   343→   343→                      <Pin className="h-3 w-3" /> Pinned
+   344→   344→                    </CardTitle>
+   345→   345→                  </CardHeader>
+   346→   346→                  <CardContent className="p-2 pt-0 space-y-0.5">
+   347→   347→                    {pinned.map((n) => (
+   348→   348→                      <NoteListItem
+   349→   349→                        key={n.id}
+   350→   350→                        note={n}
+   351→   351→                        active={activeId === n.id}
+   352→   352→                        onClick={() => openNote(n)}
+   353→   353→                      />
+   354→   354→                    ))}
+   355→   355→                  </CardContent>
+   356→   356→                </Card>
+   357→   357→              )}
+   358→   358→
+   359→   359→              {allTags.length > 0 && (
+   360→   360→                <Card className="border-slate-700 bg-slate-800/60">
+   361→   361→                  <CardHeader className="pb-2 pt-3 px-3">
+   362→   362→                    <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
+   363→   363→                      <Tag className="h-3 w-3" /> Tags
+   364→   364→                    </CardTitle>
+   365→   365→                  </CardHeader>
+   366→   366→                  <CardContent className="p-2 pt-0 flex flex-wrap gap-1">
+   367→   367→                    <button
+   368→   368→                      onClick={() => setTagFilter(null)}
+   369→   369→                      className={cn(
+   370→   370→                        "rounded-full border px-1.5 py-0.5 text-[10px]",
+   371→   371→                        !tagFilter
+   372→   372→                          ? "border-amber-500 bg-amber-500/15 text-amber-300"
+   373→   373→                          : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+   374→   374→                      )}
+   375→   375→                    >
+   376→   376→                      all
+   377→   377→                    </button>
+   378→   378→                    {allTags.slice(0, 40).map((t) => (
+   379→   379→                      <button
+   380→   380→                        key={t}
+   381→   381→                        onClick={() => setTagFilter(tagFilter === t ? null : t)}
+   382→   382→                        className={cn(
+   383→   383→                          "rounded-full border px-1.5 py-0.5 text-[10px] font-mono",
+   384→   384→                          tagFilter === t
+   385→   385→                            ? "border-amber-500 bg-amber-500/15 text-amber-300"
+   386→   386→                            : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+   387→   387→                        )}
+   388→   388→                      >
+   389→   389→                        {t}
+   390→   390→                      </button>
+   391→   391→                    ))}
+   392→   392→                  </CardContent>
+   393→   393→                </Card>
+   394→   394→              )}
+   395→   395→
+   396→   396→              <Card className="border-slate-700 bg-slate-800/60">
+   397→   397→                <CardHeader className="pb-2 pt-3 px-3">
+   398→   398→                  <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
+   399→   399→                    <Clock className="h-3 w-3" /> Recent
+   400→   400→                  </CardTitle>
+   401→   401→                </CardHeader>
+   402→   402→                <CardContent className="p-2 pt-0 space-y-0.5 max-h-[40vh] overflow-y-auto aib-scroll">
+   403→   403→                  {loading && <div className="text-[11px] text-slate-500 px-2 py-1">Loading…</div>}
+   404→   404→                  {!loading && recent.length === 0 && (
+   405→   405→                    <div className="text-[11px] text-slate-500 px-2 py-1">No notes yet</div>
+   406→   406→                  )}
+   407→   407→                  {recent.map((n) => (
+   408→   408→                    <NoteListItem
+   409→   409→                      key={n.id}
+   410→   410→                      note={n}
+   411→   411→                      active={activeId === n.id}
+   412→   412→                      onClick={() => openNote(n)}
+   413→   413→                    />
+   414→   414→                  ))}
+   415→   415→                </CardContent>
+   416→   416→              </Card>
+   417→   417→            </>
+   418→   418→          ) : (
+   419→   419→            <Card className="border-slate-700 bg-slate-800/60">
+   420→   420→              <CardHeader className="pb-2 pt-3 px-3">
+   421→   421→                <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
+   422→   422→                  <Network className="h-3 w-3" /> Graph Stats
+   423→   423→                </CardTitle>
+   424→   424→              </CardHeader>
+   425→   425→              <CardContent className="p-3 pt-0 space-y-1.5 text-[11px]">
+   426→   426→                {graphData ? (
+   427→   427→                  <>
+   428→   428→                    <StatRow label="Total notes" value={String(graphData.stats.totalNodes)} />
+   429→   429→                    <StatRow label="Total links" value={String(graphData.stats.totalLinks)} />
+   430→   430→                    <StatRow label="Avg links/note" value={graphData.stats.avgLinksPerNote} />
+   431→   431→                    <StatRow label="Orphan notes" value={String(graphData.stats.orphanCount)} />
+   432→   432→                  </>
+   433→   433→                ) : (
+   434→   434→                  <div className="text-slate-500">Loading…</div>
+   435→   435→                )}
+   436→   436→              </CardContent>
+   437→   437→            </Card>
+   438→   438→          )}
+   439→   439→        </div>
+   440→   440→
+   441→   441→        {/* CENTER PANE: editor OR graph view OR empty state */}
+   442→   442→        <div className="min-w-0">
+   443→   443→          {view === "graph" ? (
+   444→   444→            <Card className="border-slate-700 bg-slate-800/60">
+   445→   445→              <CardHeader className="pb-2">
+   446→   446→                <CardTitle className="text-base text-slate-50 flex items-center gap-2">
+   447→   447→                  <Network className="h-4 w-4 text-cyan-400" />
+   448→   448→                  Knowledge Graph
+   449→   449→                </CardTitle>
+   450→   450→                <CardDescription className="text-xs text-slate-400">
+   451→   451→                  Hover a node to highlight its connections · click to open
+   452→   452→                </CardDescription>
+   453→   453→              </CardHeader>
+   454→   454→              <CardContent>
+   455→   455→                {graphData ? (
+   456→   456→                  <GraphView
+   457→   457→                    data={graphData}
+   458→   458→                    onOpenNode={(id) => {
+   459→   459→                      const n = notes.find((x) => x.id === id);
+   460→   460→                      if (n) {
+   461→   461→                        setView("list");
+   462→   462→                        openNote(n);
+   463→   463→                      }
+   464→   464→                    }}
+   465→   465→                  />
+   466→   466→                ) : (
+   467→   467→                  <div className="h-96 flex items-center justify-center text-slate-500 text-xs">
+   468→   468→                    Loading graph…
+   469→   469→                  </div>
+   470→   470→                )}
+   471→   471→              </CardContent>
+   472→   472→            </Card>
+   473→   473→          ) : draft ? (
+   474→   474→            <Card className="border-slate-700 bg-slate-800/60">
+   475→   475→              <CardContent className="p-3 space-y-2">
+   476→   476→                <div className="flex items-center gap-2">
+   477→   477→                  <Input
+   478→   478→                    value={draft.title}
+   479→   479→                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+   480→   480→                    placeholder="Note title"
+   481→   481→                    className="h-9 bg-slate-900/70 border-slate-700 text-base font-semibold text-slate-100"
+   482→   482→                  />
+   483→   483→                  <Button
+   484→   484→                    variant="outline"
+   485→   485→                    size="sm"
+   486→   486→                    onClick={() => togglePin(draft)}
+   487→   487→                    className={cn(
+   488→   488→                      "border-slate-700 bg-slate-900/40 shrink-0",
+   489→   489→                      draft.pinned ? "text-amber-300" : "text-slate-400"
+   490→   490→                    )}
+   491→   491→                    title={draft.pinned ? "Unpin" : "Pin"}
+   492→   492→                  >
+   493→   493→                    {draft.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
+   494→   494→                  </Button>
+   495→   495→                  <Button
+   496→   496→                    variant="outline"
+   497→   497→                    size="sm"
+   498→   498→                    onClick={() => {
+   499→   499→                      if (draft.id) deleteNote(draft.id);
+   500→   500→                      else {
+   501→   501→                        setDraft(null);
+   502→   502→                      }
+   503→   503→                    }}
+   504→   504→                    className="border-slate-700 bg-slate-900/40 text-rose-300 hover:text-rose-200 shrink-0"
+   505→   505→                    title="Delete note"
+   506→   506→                  >
+   507→   507→                    <Trash2 className="h-3.5 w-3.5" />
+   508→   508→                  </Button>
+   509→   509→                </div>
+   510→   510→                {/* Toolbar */}
+   511→   511→                <div className="flex flex-wrap gap-1 border-b border-slate-700 pb-2">
+   512→   512→                  <ToolBtn onClick={() => insertSyntax("**", "**", "bold")} icon={<Bold className="h-3 w-3" />} tip="Bold" />
+   513→   513→                  <ToolBtn onClick={() => insertSyntax("*", "*", "italic")} icon={<Italic className="h-3 w-3" />} tip="Italic" />
+   514→   514→                  <ToolBtn onClick={() => insertSyntax("## ", "", "Heading")} icon={<Heading2 className="h-3 w-3" />} tip="Heading" />
+   515→   515→                  <ToolBtn onClick={() => insertSyntax("- ", "", "list item")} icon={<ListOrdered className="h-3 w-3" />} tip="List" />
+   516→   516→                  <ToolBtn onClick={() => insertSyntax("> ", "", "quote")} icon={<Quote className="h-3 w-3" />} tip="Quote" />
+   517→   517→                  <ToolBtn onClick={() => insertSyntax("`", "`", "code")} icon={<Code className="h-3 w-3" />} tip="Code" />
+   518→   518→                  <ToolBtn onClick={() => insertSyntax("[[", "]]", "Note title")} icon={<Link2 className="h-3 w-3" />} tip="Wiki-link" />
+   519→   519→                  <ToolBtn onClick={() => insertSyntax("$", "", "AAPL")} icon={<DollarSign className="h-3 w-3" />} tip="$TICKER" />
+   520→   520→                  <ToolBtn onClick={() => insertSyntax("#", "", "tag")} icon={<Hash className="h-3 w-3" />} tip="#tag" />
+   521→   521→                </div>
+   522→   522→                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[420px]">
+   523→   523→                  <Textarea
+   524→   524→                    id="note-textarea"
+   525→   525→                    value={draft.content}
+   526→   526→                    onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+   527→   527→                    placeholder="Start writing. Try: $NVDA breaking out, see [[NVDA Thesis]]. Add #tags with #hashtag."
+   528→   528→                    className="bg-slate-900/70 border-slate-700 text-slate-100 placeholder:text-slate-500 font-mono text-sm min-h-[420px] resize-y"
+   529→   529→                  />
+   530→   530→                  <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3 overflow-y-auto max-h-[60vh] aib-scroll">
+   531→   531→                    <Markdown content={draft.content || "_Preview will appear here_"} />
+   532→   532→                  </div>
+   533→   533→                </div>
+   534→   534→                <div className="text-[10px] text-slate-500 flex items-center gap-3">
+   535→   535→                  <Clock className="h-2.5 w-2.5" />
+   536→   536→                  Last updated{" "}
+   537→   537→                  {new Date(draft.updatedAt).toLocaleString("en-US", {
+   538→   538→                    month: "short",
+   539→   539→                    day: "numeric",
+   540→   540→                    hour: "2-digit",
+   541→   541→                    minute: "2-digit",
+   542→   542→                  })}
+   543→   543→                  <span className="text-emerald-400">· Auto-saved</span>
+   544→   544→                </div>
+   545→   545→              </CardContent>
+   546→   546→            </Card>
+   547→   547→          ) : (
+   548→   548→            <Card className="border-slate-700 bg-slate-800/40">
+   549→   549→              <CardContent className="p-8 text-center">
+   550→   550→                <NotebookPen className="mx-auto h-8 w-8 text-slate-600" />
+   551→   551→                <h3 className="mt-3 text-base font-semibold text-slate-200">
+   552→   552→                  Start a new note
+   553→   553→                </h3>
+   554→   554→                <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto">
+   555→   555→                  Capture research thoughts, link them with <code className="rounded bg-slate-800 px-1 text-amber-300">{"[[wiki-links]]"}</code>,
+   556→   556→                  tag tickers with <code className="rounded bg-slate-800 px-1 text-amber-300">{"$TICKER"}</code>, and use{" "}
+   557→   557→                  <code className="rounded bg-slate-800 px-1 text-amber-300">{"#hashtags"}</code> for topics.
+   558→   558→                </p>
+   559→   559→                <Button
+   560→   560→                  onClick={startNew}
+   561→   561→                  className="mt-4 bg-amber-500 text-slate-950 hover:bg-amber-400"
+   562→   562→                >
+   563→   563→                  <Plus className="mr-1.5 h-4 w-4" />
+   564→   564→                  Create first note
+   565→   565→                </Button>
+   566→   566→                {notes.length > 0 && (
+   567→   567→                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2 text-left max-w-lg mx-auto">
+   568→   568→                    {recent.slice(0, 4).map((n) => (
+   569→   569→                      <button
+   570→   570→                        key={n.id}
+   571→   571→                        onClick={() => openNote(n)}
+   572→   572→                        className="rounded-md border border-slate-700 bg-slate-900/40 p-2 text-xs hover:border-amber-500/60 hover:bg-amber-500/5"
+   573→   573→                      >
+   574→   574→                        <div className="font-semibold text-slate-200 truncate">{n.title}</div>
+   575→   575→                        <div className="text-slate-500 truncate">{n.content.slice(0, 60) || "(empty)"}</div>
+   576→   576→                      </button>
+   577→   577→                    ))}
+   578→   578→                  </div>
+   579→   579→                )}
+   580→   580→              </CardContent>
+   581→   581→            </Card>
+   582→   582→          )}
+   583→   583→        </div>
+   584→   584→
+   585→   585→        {/* RIGHT PANE: backlinks + outgoing links + ticker refs */}
+   586→   586→        <div className="space-y-3">
+   587→   587→          {draft && (
+   588→   588→            <>
+   589→   589→              <Card className="border-slate-700 bg-slate-800/60">
+   590→   590→                <CardHeader className="pb-2 pt-3 px-3">
+   591→   591→                  <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
+   592→   592→                    <ArrowLeft className="h-3 w-3" /> Backlinks ({backlinks.length})
+   593→   593→                  </CardTitle>
+   594→   594→                  <CardDescription className="text-[10px] text-slate-500">
+   595→   595→                    Notes linking to this one
+   596→   596→                  </CardDescription>
+   597→   597→                </CardHeader>
+   598→   598→                <CardContent className="p-2 pt-0 space-y-1 max-h-60 overflow-y-auto aib-scroll">
+   599→   599→                  {backlinks.length === 0 ? (
+   600→   600→                    <div className="text-[11px] text-slate-500 px-1">No backlinks yet</div>
+   601→   601→                  ) : (
+   602→   602→                    backlinks.map((b) => (
+   603→   603→                      <button
+   604→   604→                        key={b.id}
+   605→   605→                        onClick={() => openNote(b)}
+   606→   606→                        className="block w-full text-left rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1.5 hover:bg-slate-800"
+   607→   607→                      >
+   608→   608→                        <div className="text-xs font-semibold text-amber-300 truncate">{b.title}</div>
+   609→   609→                        <div className="text-[10px] text-slate-500 truncate">{b.content.slice(0, 80)}</div>
+   610→   610→                      </button>
+   611→   611→                    ))
+   612→   612→                  )}
+   613→   613→                </CardContent>
+   614→   614→              </Card>
+   615→   615→
+   616→   616→              <Card className="border-slate-700 bg-slate-800/60">
+   617→   617→                <CardHeader className="pb-2 pt-3 px-3">
+   618→   618→                  <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
+   619→   619→                    <Link2 className="h-3 w-3" /> Outgoing links ({draft.links.length})
+   620→   620→                  </CardTitle>
+   621→   621→                </CardHeader>
+   622→   622→                <CardContent className="p-2 pt-0 space-y-1 max-h-60 overflow-y-auto aib-scroll">
+   623→   623→                  {draft.links.length === 0 ? (
+   624→   624→                    <div className="text-[11px] text-slate-500 px-1">No wiki-links yet</div>
+   625→   625→                  ) : (
+   626→   626→                    draft.links.map((l) => {
+   627→   627→                      const target = notes.find((n) => n.title.toLowerCase() === l.trim().toLowerCase());
+   628→   628→                      return (
+   629→   629→                        <button
+   630→   630→                          key={l}
+   631→   631→                          onClick={() => {
+   632→   632→                            if (target) openNote(target);
+   633→   633→                            else toast.info(`"${l}" doesn't exist yet — create it`);
+   634→   634→                          }}
+   635→   635→                          className="block w-full text-left rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1.5 hover:bg-slate-800"
+   636→   636→                        >
+   637→   637→                          <div className="text-xs text-cyan-300 truncate flex items-center gap-1">
+   638→   638→                            <Link2 className="h-3 w-3" />
+   639→   639→                            {l}
+   640→   640→                          </div>
+   641→   641→                          {target ? (
+   642→   642→                            <div className="text-[10px] text-slate-500 truncate">Opens existing note</div>
+   643→   643→                          ) : (
+   644→   644→                            <div className="text-[10px] text-amber-400">Click to create</div>
+   645→   645→                          )}
+   646→   646→                        </button>
+   647→   647→                      );
+   648→   648→                    })
+   649→   649→                  )}
+   650→   650→                </CardContent>
+   651→   651→              </Card>
+   652→   652→
+   653→   653→              <Card className="border-slate-700 bg-slate-800/60">
+   654→   654→                <CardHeader className="pb-2 pt-3 px-3">
+   655→   655→                  <CardTitle className="text-xs text-slate-400 flex items-center gap-1">
+   656→   656→                    <DollarSign className="h-3 w-3" /> Ticker refs ({draft.tickerRefs.length})
+   657→   657→                  </CardTitle>
+   658→   658→                </CardHeader>
+   659→   659→                <CardContent className="p-2 pt-0 flex flex-wrap gap-1">
+   660→   660→                  {draft.tickerRefs.length === 0 ? (
+   661→   661→                    <div className="text-[11px] text-slate-500 px-1">No tickers referenced</div>
+   662→   662→                  ) : (
+   663→   663→                    draft.tickerRefs.map((t) => (
+   664→   664→                      <button
+   665→   665→                        key={t}
+   666→   666→                        onClick={() => onSelectTicker(t)}
+   667→   667→                        className="inline-flex items-center gap-1 rounded border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 text-[11px] font-mono text-amber-300 hover:bg-amber-900/40"
+   668→   668→                      >
+   669→   669→                        {t}
+   670→   670→                        <ArrowUpRight className="h-3 w-3" />
+   671→   671→                      </button>
+   672→   672→                    ))
+   673→   673→                  )}
+   674→   674→                </CardContent>
+   675→   675→              </Card>
+   676→   676→            </>
+   677→   677→          )}
+   678→   678→
+   679→   679→          {!draft && (
+   680→   680→            <Card className="border-slate-700 bg-slate-800/40">
+   681→   681→              <CardContent className="p-4 text-[11px] text-slate-500">
+   682→   682→                Select a note to see backlinks, outgoing links, and ticker refs here.
+   683→   683→              </CardContent>
+   684→   684→            </Card>
+   685→   685→          )}
+   686→   686→        </div>
+   687→   687→      </div>
+   688→   688→    </div>
+   689→   689→  );
+   690→   690→}
+   691→   691→
+   692→   692→function NoteListItem({ note, active, onClick }: { note: NoteDTO; active: boolean; onClick: () => void }) {
+   693→   693→  return (
+   694→   694→    <button
+   695→   695→      onClick={onClick}
+   696→   696→      className={cn(
+   697→   697→        "block w-full text-left rounded px-2 py-1.5 transition-colors",
+   698→   698→        active ? "bg-amber-500/15 text-amber-200" : "hover:bg-slate-800 text-slate-300"
+   699→   699→      )}
+   700→   700→    >
+   701→   701→      <div className="flex items-center gap-1.5">
+   702→   702→        {note.pinned && <Pin className="h-2.5 w-2.5 text-amber-400 shrink-0" />}
+   703→   703→        <span className="text-xs font-semibold truncate">{note.title}</span>
+   704→   704→      </div>
+   705→   705→      <div className="text-[10px] text-slate-500 truncate">
+   706→   706→        {note.content.slice(0, 60) || "(empty)"}
+   707→   707→      </div>
+   708→   708→    </button>
+   709→   709→  );
+   710→   710→}
+   711→   711→
+   712→   712→function ToolBtn({ onClick, icon, tip }: { onClick: () => void; icon: React.ReactNode; tip: string }) {
+   713→   713→  return (
+   714→   714→    <button
+   715→   715→      onClick={onClick}
+   716→   716→      title={tip}
+   717→   717→      className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-900/40 text-slate-400 hover:text-amber-300 hover:border-amber-500/60"
+   718→   718→    >
+   719→   719→      {icon}
+   720→   720→    </button>
+   721→   721→  );
+   722→   722→}
+   723→   723→
+   724→   724→function StatRow({ label, value }: { label: string; value: string }) {
+   725→   725→  return (
+   726→   726→    <div className="flex items-center justify-between border-b border-slate-700/40 pb-1">
+   727→   727→      <span className="text-slate-400">{label}</span>
+   728→   728→      <span className="font-mono font-semibold text-slate-100">{value}</span>
+   729→   729→    </div>
+   730→   730→  );
+   731→   731→}
+   732→   732→
+   733→   733→// ── Graph view (force-directed SVG) ──────────────────────────────────
+   734→   734→interface GraphViewProps {
+   735→   735→  data: {
+   736→   736→    nodes: { id: string; title: string; tags: string[]; pinned: boolean; linkCount: number }[];
+   737→   737→    links: { source: string; target: string }[];
+   738→   738→    stats: { totalNodes: number; totalLinks: number; avgLinksPerNote: string; orphanCount: number };
+   739→   739→  };
+   740→   740→  onOpenNode: (id: string) => void;
+   741→   741→}
+   742→   742→
+   743→   743→const TAG_COLORS = ["#f59e0b", "#22d3ee", "#34d399", "#a78bfa", "#fb7185", "#facc15", "#60a5fa"];
+   744→   744→
+   745→   745→function GraphView({ data, onOpenNode }: GraphViewProps) {
+   746→   746→  const [hovered, setHovered] = useState<string | null>(null);
+   747→   747→  const sizeRef = useRef<HTMLDivElement>(null);
+   748→   748→  const [dims, setDims] = useState({ w: 800, h: 420 });
+   749→   749→
+   750→   750→  useEffect(() => {
+   751→   751→    function update() {
+   752→   752→      if (!sizeRef.current) return;
+   753→   753→      const r = sizeRef.current.getBoundingClientRect();
+   754→   754→      setDims({ w: Math.max(320, r.width), h: 420 });
+   755→   755→    }
+   756→   756→    update();
+   757→   757→    window.addEventListener("resize", update);
+   758→   758→    return () => window.removeEventListener("resize", update);
+   759→   759→  }, []);
+   760→   760→
+   761→   761→  // Compute simple force layout (deterministic circular layout with center gravity)
+   762→   762→  const layout = useMemo(() => {
+   763→   763→    const { w, h } = dims;
+   764→   764→    const cx = w / 2;
+   765→   765→    const cy = h / 2;
+   766→   766→    const radius = Math.min(w, h) / 2 - 50;
+   767→   767→    const nodes = data.nodes;
+   768→   768→    const map = new Map<string, { id: string; title: string; tags: string[]; pinned: boolean; linkCount: number; x: number; y: number; vx: number; vy: number }>();
+   769→   769→    nodes.forEach((n, i) => {
+   770→   770→      const angle = (i / Math.max(1, nodes.length)) * Math.PI * 2;
+   771→   771→      const r = nodes.length === 1 ? 0 : radius * 0.85;
+   772→   772→      map.set(n.id, {
+   773→   773→        ...n,
+   774→   774→        x: cx + Math.cos(angle) * r,
+   775→   775→        y: cy + Math.sin(angle) * r,
+   776→   776→        vx: 0,
+   777→   777→        vy: 0,
+   778→   778→      });
+   779→   779→    });
+   780→   780→
+   781→   781→    // Run a few iterations of a simple spring layout
+   782→   782→    const linkMap = new Map<string, Set<string>>();
+   783→   783→    for (const l of data.links) {
+   784→   784→      if (!linkMap.has(l.source)) linkMap.set(l.source, new Set());
+   785→   785→      if (!linkMap.has(l.target)) linkMap.set(l.target, new Set());
+   786→   786→      linkMap.get(l.source)!.add(l.target);
+   787→   787→      linkMap.get(l.target)!.add(l.source);
+   788→   788→    }
+   789→   789→
+   790→   790→    const arr = Array.from(map.values());
+   791→   791→    const k = 80; // ideal spring length
+   792→   792→    const iterations = 120;
+   793→   793→    for (let it = 0; it < iterations; it++) {
+   794→   794→      // Repulsive forces between all pairs
+   795→   795→      for (let i = 0; i < arr.length; i++) {
+   796→   796→        for (let j = i + 1; j < arr.length; j++) {
+   797→   797→          const a = arr[i];
+   798→   798→          const b = arr[j];
+   799→   799→          let dx = a.x - b.x;
+   800→   800→          let dy = a.y - b.y;
+   801→   801→          let dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+   802→   802→          if (dist > 300) continue;
+   803→   803→          const force = (k * k) / dist;
+   804→   804→          const fx = (dx / dist) * force * 0.05;
+   805→   805→          const fy = (dy / dist) * force * 0.05;
+   806→   806→          a.vx += fx;
+   807→   807→          a.vy += fy;
+   808→   808→          b.vx -= fx;
+   809→   809→          b.vy -= fy;
+   810→   810→        }
+   811→   811→      }
+   812→   812→      // Attractive forces for connected pairs
+   813→   813→      for (const l of data.links) {
+   814→   814→        const a = map.get(l.source);
+   815→   815→        const b = map.get(l.target);
+   816→   816→        if (!a || !b) continue;
+   817→   817→        let dx = a.x - b.x;
+   818→   818→        let dy = a.y - b.y;
+   819→   819→        let dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+   820→   820→        const force = (dist * dist) / k;
+   821→   821→        const fx = (dx / dist) * force * 0.05;
+   822→   822→        const fy = (dy / dist) * force * 0.05;
+   823→   823→        a.vx -= fx;
+   824→   824→        a.vy -= fy;
+   825→   825→        b.vx += fx;
+   826→   826→        b.vy += fy;
+   827→   827→      }
+   828→   828→      // Apply velocity with damping, plus center gravity
+   829→   829→      for (const n of arr) {
+   830→   830→        n.vx += (cx - n.x) * 0.005;
+   831→   831→        n.vy += (cy - n.y) * 0.005;
+   832→   832→        n.x += n.vx * 0.4;
+   833→   833→        n.y += n.vy * 0.4;
+   834→   834→        n.vx *= 0.85;
+   835→   835→        n.vy *= 0.85;
+   836→   836→        // keep inside bounds
+   837→   837→        const pad = 30;
+   838→   838→        if (n.x < pad) n.x = pad;
+   839→   839→        if (n.x > w - pad) n.x = w - pad;
+   840→   840→        if (n.y < pad) n.y = pad;
+   841→   841→        if (n.y > h - pad) n.y = h - pad;
+   842→   842→      }
+   843→   843→    }
+   844→   844→
+   845→   845→    return { nodes: arr, linkMap };
+   846→   846→  }, [data, dims]);
+   847→   847→
+   848→   848→  if (data.nodes.length === 0) {
+   849→   849→    return (
+   850→   850→      <div className="h-[420px] flex items-center justify-center text-slate-500 text-sm">
+   851→   851→        No notes to graph yet. Create a few notes with [[wiki-links]] between them.
+   852→   852→      </div>
+   853→   853→    );
+   854→   854→  }
+   855→   855→
+   856→   856→  const hoveredNeighbors = hovered ? (layout.linkMap.get(hovered) ?? new Set<string>()) : null;
+   857→   857→  function isDimmed(id: string) {
+   858→   858→    if (!hovered) return false;
+   859→   859→    if (id === hovered) return false;
+   860→   860→    if (hoveredNeighbors?.has(id)) return false;
+   861→   861→    return true;
+   862→   862→  }
+   863→   863→
+   864→   864→  function primaryTagColor(tags: string[]): string {
+   865→   865→    if (!tags || tags.length === 0) return "#64748b";
+   866→   866→    const first = tags[0];
+   867→   867→    let hash = 0;
+   868→   868→    for (let i = 0; i < first.length; i++) hash = (hash * 31 + first.charCodeAt(i)) | 0;
+   869→   869→    return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+   870→   870→  }
+   871→   871→
+   872→   872→  return (
+   873→   873→    <div ref={sizeRef} className="w-full">
+   874→   874→      <svg width={dims.w} height={dims.h} className="block">
+   875→   875→        {/* Edges */}
+   876→   876→        {data.links.map((l, i) => {
+   877→   877→          const a = layout.nodes.find((n) => n.id === l.source);
+   878→   878→          const b = layout.nodes.find((n) => n.id === l.target);
+   879→   879→          if (!a || !b) return null;
+   880→   880→          const dimmed = hovered && hovered !== l.source && hovered !== l.target;
+   881→   881→          return (
+   882→   882→            <line
+   883→   883→              key={i}
+   884→   884→              x1={a.x}
+   885→   885→              y1={a.y}
+   886→   886→              x2={b.x}
+   887→   887→              y2={b.y}
+   888→   888→              stroke={dimmed ? "#1e293b" : "#475569"}
+   889→   889→              strokeWidth={dimmed ? 1 : 1.5}
+   890→   890→              opacity={dimmed ? 0.3 : 0.7}
+   891→   891→            />
+   892→   892→          );
+   893→   893→        })}
+   894→   894→        {/* Nodes */}
+   895→   895→        {layout.nodes.map((n) => {
+   896→   896→          const color = primaryTagColor(n.tags);
+   897→   897→          const r = 8 + Math.min(12, n.linkCount * 2);
+   898→   898→          const dimmed = isDimmed(n.id);
+   899→   899→          return (
+   900→   900→            <g
+   901→   901→              key={n.id}
+   902→   902→              transform={`translate(${n.x}, ${n.y})`}
+   903→   903→              style={{ cursor: "pointer", opacity: dimmed ? 0.3 : 1 }}
+   904→   904→              onMouseEnter={() => setHovered(n.id)}
+   905→   905→              onMouseLeave={() => setHovered(null)}
+   906→   906→              onClick={() => onOpenNode(n.id)}
+   907→   907→            >
+   908→   908→              <circle
+   909→   909→                r={r}
+   910→   910→                fill={color}
+   911→   911→                stroke={n.pinned ? "#fbbf24" : "#0f172a"}
+   912→   912→                strokeWidth={n.pinned ? 3 : 1.5}
+   913→   913→                opacity={0.9}
+   914→   914→              />
+   915→   915→              <text
+   916→   916→                y={r + 11}
+   917→   917→                textAnchor="middle"
+   918→   918→                fill="#cbd5e1"
+   919→   919→                fontSize={10}
+   920→   920→                fontWeight={n.id === hovered ? 700 : 400}
+   921→   921→              >
+   922→   922→                {n.title.length > 24 ? n.title.slice(0, 22) + "…" : n.title}
+   923→   923→              </text>
+   924→   924→            </g>
+   925→   925→          );
+   926→   926→        })}
+   927→   927→      </svg>
+   928→   928→    </div>
+   929→   929→  );
+   930→   930→}
+   931→   931→
