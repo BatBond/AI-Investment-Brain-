@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/query-provider";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { initSchedulerOnce } from "@/lib/scheduler-init";
 
 // Kick off the email scheduler on app boot (idempotent — safe under hot reload).
@@ -47,21 +48,23 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground min-h-screen flex flex-col`}
       >
-        <QueryProvider>
-          {children}
-          <Toaster />
-          <SonnerToaster
-            position="top-right"
-            theme="dark"
-            toastOptions={{
-              style: {
-                background: "#1e293b",
-                border: "1px solid #334155",
-                color: "#f1f5f9",
-              },
-            }}
-          />
-        </QueryProvider>
+        <ErrorBoundary>
+          <QueryProvider>
+            {children}
+            <Toaster />
+            <SonnerToaster
+              position="top-right"
+              theme="dark"
+              toastOptions={{
+                style: {
+                  background: "#1e293b",
+                  border: "1px solid #334155",
+                  color: "#f1f5f9",
+                },
+              }}
+            />
+          </QueryProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
