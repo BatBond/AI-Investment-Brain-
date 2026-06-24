@@ -6,6 +6,7 @@ import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { initSchedulerOnce } from "@/lib/scheduler-init";
+import { Analytics } from "@vercel/analytics/next";
 
 // Kick off the email scheduler on app boot (idempotent — safe under hot reload).
 initSchedulerOnce();
@@ -65,6 +66,7 @@ export default function RootLayout({
             />
           </QueryProvider>
         </ErrorBoundary>
+        <Analytics />
       </body>
     </html>
   );
